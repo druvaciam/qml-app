@@ -1,0 +1,39 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build",
+            "type": "shell",
+            "command": "ninja",
+            "args": [
+                "-C",
+                "build"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}",
+                "env": {
+                    "PATH": "D:\\Qt\\6.8.2\\mingw_64\\bin;D:\\Qt\\Tools\\mingw1310_64\\bin;D:\\Qt\\Tools\\Ninja;D:\\Qt\\Tools\\CMake_64\\bin;${env:PATH}",
+                    "QTFRAMEWORK_BYPASS_LICENSE_CHECK": "1"
+                }
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": ["$gcc"]
+        },
+        {
+            "label": "Run",
+            "type": "shell",
+            "command": "${workspaceFolder}/build/appQmlCommander.exe",
+            "options": {
+                "cwd": "${workspaceFolder}/build",
+                "env": {
+                    "PATH": "D:\\Qt\\6.8.2\\mingw_64\\bin;D:\\Qt\\Tools\\mingw1310_64\\bin;D:\\Qt\\Tools\\Ninja;${env:PATH}",
+                    "QTFRAMEWORK_BYPASS_LICENSE_CHECK": "1"
+                }
+            },
+            "problemMatcher": []
+        }
+    ]
+}

@@ -1,0 +1,28 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Build & Run (QmlCommander)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/appQmlCommander.exe",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/build",
+            "environment": [
+                {
+                    "name": "PATH",
+                    "value": "D:\\Qt\\6.8.2\\mingw_64\\bin;D:\\Qt\\Tools\\mingw1310_64\\bin;D:\\Qt\\Tools\\Ninja;${env:PATH}"
+                },
+                {
+                    "name": "QTFRAMEWORK_BYPASS_LICENSE_CHECK",
+                    "value": "1"
+                }
+            ],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "D:/Qt/Tools/mingw1310_64/bin/gdb.exe",
+            "preLaunchTask": "Build"
+        }
+    ]
+}

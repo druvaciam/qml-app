@@ -1,0 +1,33 @@
+# Fast Build & Run Shortcuts
+
+# 1. Inside IDE:
+Press `Ctrl + F5` (Run Without Debugging) or `F5` (Debug) -> automatically builds with Ninja and launches the app!
+
+# 2. Command Line:
+cmake -B build -G Ninja
+ninja -C build
+build\appQmlCommander.exe
+
+
+
+Architectural Roles & Separation of Responsibilities
+                         ┌────────────────────────┐
+                         │     AppController      │  <-- Dual-Pane Coordinator
+                         └───────────┬────────────┘
+                     ┌───────────────┴───────────────┐
+                     ▼                               ▼
+          ┌────────────────────┐          ┌────────────────────┐
+          │  PanelController   │          │  PanelController   │  <-- UI Pane State & Nav
+          │   (Left Panel)     │          │   (Right Panel)    │
+          └─────────┬──────────┘          └─────────┬──────────┘
+                    │                               │
+                    ▼                               ▼
+          ┌────────────────────┐          ┌────────────────────┐
+          │   FileListModel    │          │   FileListModel    │  <-- View Data & Sorting
+          └────────────────────┘          └────────────────────┘
+                     │                               │
+                     └───────────────┬───────────────┘
+                                     ▼
+                      ┌────────────────────────────┐
+                      │   FileOperationsService    │  <-- Asynchronous Disk Engine
+                      └────────────────────────────┘
