@@ -17,6 +17,7 @@ Item {
     readonly property bool containsDrag: listDropArea.containsDrag
     property int editingIndex: -1
     property int dragHoverIndex: -1
+    property int selectionAnchorIndex: -1
 
     property string savedTopItemName: ""
     property real savedTopItemOffset: 0
@@ -59,7 +60,15 @@ Item {
             if (newCurIdx >= 0) {
                 listView.currentIndex = newCurIdx
                 rootListView.controller.currentIndex = newCurIdx
+            } else if (model.count > 0) {
+                let clamped = Math.min(Math.max(0, rootListView.controller.currentIndex), model.count - 1)
+                listView.currentIndex = clamped
+                rootListView.controller.currentIndex = clamped
             }
+        } else if (model.count > 0) {
+            let clamped = Math.min(Math.max(0, rootListView.controller.currentIndex), model.count - 1)
+            listView.currentIndex = clamped
+            rootListView.controller.currentIndex = clamped
         }
 
         // 2. Restore scroll position anchored to top-visible item
@@ -83,7 +92,7 @@ Item {
         let idx = listView.indexAt(contentPos.x, contentPos.y)
         if (idx >= 0 && idx < listView.count) {
             let item = rootListView.controller.model.get(idx)
-            if (item && item.isDir && !item.isParent) {
+            if (item && item.isDir) {
                 dragHoverIndex = idx
                 return
             }
@@ -98,7 +107,7 @@ Item {
     function getHoveredFolder() {
         if (dragHoverIndex >= 0 && dragHoverIndex < listView.count) {
             let item = rootListView.controller.model.get(dragHoverIndex)
-            if (item && item.isDir && !item.isParent) {
+            if (item && item.isDir) {
                 return item.filePath
             }
         }
@@ -419,7 +428,18 @@ Item {
             }
 
             if (paths && paths.length > 0 && !isSame) {
-                let isMove = (drop.modifiers & Qt.ShiftModifier) !== 0
+                let p0 = paths[0].replace(/\\/g, "/")
+                let idx = p0.lastIndexOf("/")
+                let sourceDir = (idx > 0) ? p0.substring(0, idx) : p0
+                let isSamePanel = (normalizePath(sourceDir) === normalizePath(rootListView.controller.currentPath))
+                let isMove = false
+                if ((drop.modifiers & Qt.ShiftModifier) !== 0) {
+                    isMove = true
+                } else if ((drop.modifiers & Qt.ControlModifier) !== 0) {
+                    isMove = false
+                } else {
+                    isMove = isSamePanel
+                }
                 drop.accept(isMove ? Qt.MoveAction : Qt.CopyAction)
                 rootListView.requestDropCopy(paths, dest, isMove)
             }
@@ -438,7 +458,7 @@ Item {
         anchors.right: parent.right
         clip: true
         model: rootListView.controller.model
-        focus: rootListView.controller.isActive
+        focus: true
         boundsBehavior: Flickable.StopAtBounds
         currentIndex: 0
 
@@ -580,6 +600,9 @@ Item {
                 property real pressRootX: 0
                 property real pressRootY: 0
                 property bool isDragActive: false
+                property bool pressedOnAlreadySelected: false
+                property int rightPressIndex: -1
+                property bool isRightDragging: false
 
                 Timer {
                     id: rowLongRightPressTimer
@@ -609,10 +632,7 @@ Item {
                 }
 
                 onPressed: (mouse) => {
-                    let wasAlreadySelected = isSelected &&
-                                             (listView.currentIndex === index) &&
-                                             rootListView.controller.isActive &&
-                                             !isParent
+                    pressedOnAlreadySelected = isSelected && !isParent
 
                     if (rootListView.editingIndex >= 0 && rootListView.editingIndex !== index) {
                         rootListView.editingIndex = -1
@@ -624,6 +644,7 @@ Item {
                     pressRootY = pt.y
                     isDragActive = false
 
+                    let prevIndex = listView.currentIndex
                     listView.currentIndex = index
                     rootListView.controller.currentIndex = index
                     rootListView.controller.activate()
@@ -631,26 +652,61 @@ Item {
 
                     if (mouse.button === Qt.RightButton) {
                         renameClickTimer.stop()
+                        rightPressIndex = index
+                        isRightDragging = false
                         rowLongRightPressTimer.start()
                     } else if (mouse.button === Qt.LeftButton) {
-                        if (mouse.modifiers & Qt.ControlModifier) {
+                        if (mouse.modifiers & Qt.ShiftModifier) {
                             renameClickTimer.stop()
-                            rootListView.controller.model.toggleSelection(index)
+                            let anchor = (rootListView.selectionAnchorIndex >= 0) ? rootListView.selectionAnchorIndex : prevIndex
+                            if (anchor < 0) anchor = index
+                            let clearOthers = !(mouse.modifiers & Qt.ControlModifier)
+                            rootListView.controller.model.selectRange(anchor, index, clearOthers)
+                        } else if (mouse.modifiers & Qt.ControlModifier) {
+                            renameClickTimer.stop()
+                            rootListView.selectionAnchorIndex = index
+                            if (!pressedOnAlreadySelected) {
+                                rootListView.controller.model.toggleSelection(index)
+                            }
                         } else if (!isParent) {
-                            if (wasAlreadySelected) {
-                                // Second click on already-selected item: schedule rename after double-click window
-                                renameClickTimer.start()
-                            } else {
+                            rootListView.selectionAnchorIndex = index
+                            if (!isSelected) {
                                 renameClickTimer.stop()
                                 rootListView.controller.model.selectOnly(index)
                             }
+                            // If isSelected is true, keep multi-selection intact for dragging!
                         }
                     }
                 }
 
                 onPositionChanged: (mouse) => {
                     let pt = rowMouse.mapToItem(null, mouse.x, mouse.y)
-                    if (isDragActive) {
+                    if (mouse.buttons & Qt.RightButton) {
+                        let dx = Math.abs(mouse.x - lastPressX)
+                        let dy = Math.abs(mouse.y - lastPressY)
+                        if (!isRightDragging && (dx > 6 || dy > 6)) {
+                            rowLongRightPressTimer.stop()
+                            isRightDragging = true
+                            rootListView.controller.model.beginRightDragSelection(rightPressIndex, (mouse.modifiers & Qt.ShiftModifier) !== 0)
+                        }
+                        if (isRightDragging) {
+                            let contentPos = rowMouse.mapToItem(listView.contentItem, mouse.x, mouse.y)
+                            let clampedX = Math.max(10, Math.min(listView.width - 10, contentPos.x))
+                            let targetIdx = listView.indexAt(clampedX, contentPos.y)
+                            if (targetIdx === -1) {
+                                if (contentPos.y <= 0) targetIdx = 0
+                                else if (contentPos.y >= listView.contentHeight) targetIdx = listView.count - 1
+                                else targetIdx = Math.max(0, Math.min(listView.count - 1, Math.floor(contentPos.y / Theme.rowHeight)))
+                            }
+                            if (targetIdx >= 0 && targetIdx < listView.count) {
+                                rootListView.controller.model.updateRightDragSelection(targetIdx)
+                                listView.currentIndex = targetIdx
+                                rootListView.controller.currentIndex = targetIdx
+                                listView.positionViewAtIndex(targetIdx, ListView.Contain)
+                            }
+                            return
+                        }
+                    } else if (isDragActive) {
                         window.updateGlobalDrag(pt.x, pt.y, mouse.modifiers)
                     } else if (!isParent && (mouse.buttons & Qt.LeftButton)) {
                         let dx = Math.abs(pt.x - pressRootX)
@@ -678,10 +734,32 @@ Item {
                         return
                     }
                     if (mouse.button === Qt.RightButton) {
+                        if (isRightDragging) {
+                            isRightDragging = false
+                            rootListView.controller.model.endRightDragSelection()
+                            return
+                        }
                         if (rowLongRightPressTimer.running) {
                             rowLongRightPressTimer.stop()
                             // Short right click: toggle selection (classic Commander style)
                             rootListView.controller.model.toggleSelection(index)
+                        }
+                    } else if (mouse.button === Qt.LeftButton) {
+                        if (mouse.modifiers & Qt.ControlModifier) {
+                            if (pressedOnAlreadySelected) {
+                                // User pressed Ctrl on already-selected item and released without dragging: toggle off
+                                rootListView.controller.model.toggleSelection(index)
+                            }
+                        } else if (!(mouse.modifiers & Qt.ShiftModifier) && !isParent) {
+                            if (pressedOnAlreadySelected) {
+                                if (rootListView.controller.selectedItemsCount > 1) {
+                                    // Released without dragging on a multi-selection: select only this item
+                                    rootListView.controller.model.selectOnly(index)
+                                } else {
+                                    // Second click on uniquely selected item: schedule rename after double-click window
+                                    renameClickTimer.start()
+                                }
+                            }
                         }
                     }
                 }
@@ -689,6 +767,10 @@ Item {
                 onCanceled: {
                     rowLongRightPressTimer.stop()
                     renameClickTimer.stop()
+                    if (isRightDragging) {
+                        isRightDragging = false
+                        rootListView.controller.model.endRightDragSelection()
+                    }
                     if (isDragActive) {
                         isDragActive = false
                         window.cancelGlobalDrag()
@@ -886,26 +968,16 @@ Item {
 
         Connections {
             target: rootListView.controller
-            function onIsActiveChanged(active) {
-                if (active) {
-                    Qt.callLater(() => listView.forceActiveFocus())
-                }
-            }
             function onCurrentPathChanged() {
                 rootListView.editingIndex = -1
                 rootListView.isReloadingSamePath = false
-                if (rootListView.controller.isActive) {
-                    Qt.callLater(() => listView.forceActiveFocus())
-                }
+                rootListView.selectionAnchorIndex = -1
             }
             function onCurrentIndexChanged(idx) {
                 if (listView.currentIndex !== idx) {
                     listView.currentIndex = idx
                 }
                 listView.positionViewAtIndex(idx, ListView.Contain)
-                if (rootListView.controller.isActive) {
-                    Qt.callLater(() => listView.forceActiveFocus())
-                }
             }
         }
 
@@ -934,10 +1006,12 @@ Item {
                     if (rootListView.controller.currentIndex >= 0 && rootListView.controller.currentIndex < listView.count) {
                         listView.currentIndex = rootListView.controller.currentIndex
                         listView.positionViewAtIndex(listView.currentIndex, ListView.Contain)
+                    } else if (listView.count > 0) {
+                        let clamped = Math.min(Math.max(0, rootListView.controller.currentIndex), listView.count - 1)
+                        listView.currentIndex = clamped
+                        rootListView.controller.currentIndex = clamped
+                        listView.positionViewAtIndex(clamped, ListView.Contain)
                     }
-                }
-                if (rootListView.controller.isActive) {
-                    Qt.callLater(() => listView.forceActiveFocus())
                 }
             }
         }
@@ -969,7 +1043,15 @@ Item {
         }
 
         Keys.onPressed: (event) => {
-            if (event.key === Qt.Key_Backspace) {
+            if ((event.key === Qt.Key_Up || event.key === Qt.Key_Down) && (event.modifiers & Qt.ShiftModifier)) {
+                if (rootListView.selectionAnchorIndex < 0) {
+                    rootListView.selectionAnchorIndex = listView.currentIndex
+                }
+                let target = (event.key === Qt.Key_Up) ? Math.max(0, listView.currentIndex - 1) : Math.min(listView.count - 1, listView.currentIndex + 1)
+                listView.currentIndex = target
+                rootListView.controller.model.selectRange(rootListView.selectionAnchorIndex, target, !(event.modifiers & Qt.ControlModifier))
+                event.accepted = true
+            } else if (event.key === Qt.Key_Backspace) {
                 rootListView.controller.navigateUp()
                 event.accepted = true
             } else if (event.key === Qt.Key_F2) {

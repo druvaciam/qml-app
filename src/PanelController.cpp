@@ -14,7 +14,17 @@ PanelController::PanelController(QObject *parent)
         emit statusChanged();
     });
 
-    connect(m_model, &FileListModel::countChanged, this, &PanelController::statusChanged);
+    connect(m_model, &FileListModel::countChanged, this, [this]() {
+        int cnt = m_model->count();
+        if (cnt == 0) {
+            if (m_currentIndex != -1) setCurrentIndex(-1);
+        } else if (m_currentIndex >= cnt) {
+            setCurrentIndex(cnt - 1);
+        } else if (m_currentIndex < 0 && cnt > 0) {
+            setCurrentIndex(0);
+        }
+        emit statusChanged();
+    });
     connect(m_model, &FileListModel::selectionChanged, this, &PanelController::statusChanged);
 
     refreshDrives();

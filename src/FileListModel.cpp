@@ -1,6 +1,7 @@
 #include "FileListModel.h"
 #include <QDir>
 #include <QFileInfo>
+#include <QRegularExpression>
 #include <algorithm>
 
 FileListModel::FileListModel(QObject *parent)
@@ -231,6 +232,98 @@ void FileListModel::selectOnly(int index)
     }
 }
 
+void FileListModel::selectRange(int fromIndex, int toIndex, bool clearOthers)
+{
+    if (m_items.isEmpty()) return;
+    int start = std::clamp(std::min(fromIndex, toIndex), 0, static_cast<int>(m_items.size()) - 1);
+    int end = std::clamp(std::max(fromIndex, toIndex), 0, static_cast<int>(m_items.size()) - 1);
+
+    bool changed = false;
+    for (int i = 0; i < static_cast<int>(m_items.size()); ++i) {
+        if (m_items[i].isParent) {
+            if (m_items[i].isSelected) {
+                m_items[i].isSelected = false;
+                changed = true;
+            }
+            continue;
+        }
+        bool inRange = (i >= start && i <= end);
+        bool shouldSelect = clearOthers ? inRange : (m_items[i].isSelected || inRange);
+        if (m_items[i].isSelected != shouldSelect) {
+            m_items[i].isSelected = shouldSelect;
+            changed = true;
+        }
+    }
+    if (changed) {
+        emit dataChanged(index(0, 0), index(static_cast<int>(m_items.size()) - 1, 0), {IsSelectedRole});
+        updateSelectionStats();
+    }
+}
+
+void FileListModel::beginRightDragSelection(int anchorIndex, bool clearOthers)
+{
+    m_rightDragAnchor = anchorIndex;
+    m_rightDragClearOthers = clearOthers;
+    m_rightDragInitialSelection.clear();
+
+    if (anchorIndex >= 0 && anchorIndex < static_cast<int>(m_items.size())) {
+        // If anchor was already selected, mirror mode is to DESELECT
+        m_rightDragSelect = !m_items[anchorIndex].isSelected;
+    } else {
+        m_rightDragSelect = true;
+    }
+
+    if (!clearOthers) {
+        for (int i = 0; i < static_cast<int>(m_items.size()); ++i) {
+            if (m_items[i].isSelected) {
+                m_rightDragInitialSelection.insert(i);
+            }
+        }
+    }
+    updateRightDragSelection(anchorIndex);
+}
+
+void FileListModel::updateRightDragSelection(int currentIndex)
+{
+    if (m_rightDragAnchor < 0 || m_items.isEmpty()) return;
+    int start = std::clamp(std::min(m_rightDragAnchor, currentIndex), 0, static_cast<int>(m_items.size()) - 1);
+    int end = std::clamp(std::max(m_rightDragAnchor, currentIndex), 0, static_cast<int>(m_items.size()) - 1);
+
+    bool changed = false;
+    for (int i = 0; i < static_cast<int>(m_items.size()); ++i) {
+        if (m_items[i].isParent) {
+            if (m_items[i].isSelected) {
+                m_items[i].isSelected = false;
+                changed = true;
+            }
+            continue;
+        }
+        bool inRange = (i >= start && i <= end);
+        bool shouldSelect = false;
+        if (m_rightDragSelect) {
+            // Select mode: inRange items are selected, others keep initial state
+            shouldSelect = inRange || (!m_rightDragClearOthers && m_rightDragInitialSelection.contains(i));
+        } else {
+            // Deselect mode: inRange items are deselected, others keep initial state
+            shouldSelect = !inRange && m_rightDragInitialSelection.contains(i);
+        }
+        if (m_items[i].isSelected != shouldSelect) {
+            m_items[i].isSelected = shouldSelect;
+            changed = true;
+        }
+    }
+    if (changed) {
+        emit dataChanged(index(0, 0), index(static_cast<int>(m_items.size()) - 1, 0), {IsSelectedRole});
+        updateSelectionStats();
+    }
+}
+
+void FileListModel::endRightDragSelection()
+{
+    m_rightDragAnchor = -1;
+    m_rightDragInitialSelection.clear();
+}
+
 void FileListModel::selectAll()
 {
     for (int i = 0; i < static_cast<int>(m_items.size()); ++i) {
@@ -385,15 +478,30 @@ void FileListModel::loadDirectory()
 
     QStringList nameFilters;
     if (!m_filterPattern.trimmed().isEmpty()) {
-        QString pattern = m_filterPattern.trimmed();
-        if (!pattern.contains(QLatin1Char('*')) && !pattern.contains(QLatin1Char('?'))) {
-            nameFilters << QString("*%1*").arg(pattern);
+        QString raw = m_filterPattern.trimmed();
+        QStringList tokens;
+        if (raw.contains(QLatin1Char(';')) || raw.contains(QLatin1Char(','))) {
+            tokens = raw.split(QRegularExpression(QStringLiteral("[,;]+")), Qt::SkipEmptyParts);
+        } else if (raw.contains(QLatin1Char(' ')) && (raw.contains(QLatin1Char('*')) || raw.contains(QLatin1Char('?')))) {
+            tokens = raw.split(QRegularExpression(QStringLiteral("\\s+")), Qt::SkipEmptyParts);
         } else {
-            nameFilters << pattern;
+            tokens << raw;
         }
+
+        for (const QString &tok : tokens) {
+            QString trimmedTok = tok.trimmed();
+            if (trimmedTok.isEmpty()) continue;
+            if (!trimmedTok.contains(QLatin1Char('*')) && !trimmedTok.contains(QLatin1Char('?'))) {
+                nameFilters << QStringLiteral("*%1*").arg(trimmedTok);
+            } else {
+                nameFilters << trimmedTok;
+            }
+        }
+        filters |= QDir::AllDirs;
     }
 
     QFileInfoList fileInfoList = dir.entryInfoList(nameFilters, filters, QDir::NoSort);
+
 
     for (const QFileInfo &info : fileInfoList) {
         bool isHidden = info.isHidden() || info.fileName().startsWith(QLatin1Char('.'));

@@ -1,4 +1,0 @@
-QQmlApplicationEngine failed to load component
-QML error: "qrc:/QmlCommander/qml/Main.qml:4:1: module \"Qt.labs.platform\" is not installed"
-qrc:/QmlCommander/qml/Main.qml:4:1: module "Qt.labs.platform" is not installed
-Failed to create root QML object: QUrl("qrc:/QmlCommander/qml/Main.qml")

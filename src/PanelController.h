@@ -84,7 +84,7 @@ public:
     Q_INVOKABLE void activate() { setIsActive(true); }
 
     QString filterText() const { return m_filterText; }
-    void setFilterText(const QString &text);
+    Q_INVOKABLE void setFilterText(const QString &text);
 
     // --- Navigation Methods ---
     Q_INVOKABLE void navigateTo(const QString &path);

@@ -7,6 +7,7 @@ Rectangle {
     id: root
     required property PanelController controller
     property alias fileListView: fileListView
+    property alias filterInput: filterInput
     property bool isDragTarget: false
     signal requestDelete(bool permanent)
     signal requestCopy()
@@ -53,8 +54,8 @@ Rectangle {
         Rectangle {
             Layout.fillWidth: true
             height: 28
-            color: Theme.bgHeader
-            border.color: Theme.borderSubtle
+            color: filterInput.activeFocus ? Theme.bgInput : Theme.bgHeader
+            border.color: filterInput.activeFocus ? Theme.accent : Theme.borderSubtle
             border.width: 1
             radius: Theme.radiusSmall
 
@@ -82,12 +83,28 @@ Rectangle {
                     verticalAlignment: TextInput.AlignVCenter
                     selectByMouse: true
 
-                    onTextChanged: {
-                        root.controller.setFilterText(text)
+                    text: root.controller.filterText
+                    onTextEdited: {
+                        root.controller.filterText = text
+                    }
+
+                    onActiveFocusChanged: {
+                        if (activeFocus) {
+                            root.controller.activate()
+                        }
                     }
 
                     Keys.onEscapePressed: {
-                        text = ""
+                        root.controller.filterText = ""
+                        fileListView.setFocus()
+                    }
+
+                    Keys.onReturnPressed: {
+                        fileListView.setFocus()
+                    }
+
+                    Keys.onDownPressed: {
+                        fileListView.setFocus()
                     }
                 }
 
@@ -111,7 +128,10 @@ Rectangle {
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: filterInput.text = ""
+                        onClicked: {
+                            root.controller.filterText = ""
+                            fileListView.setFocus()
+                        }
                     }
                 }
 
@@ -219,5 +239,11 @@ Rectangle {
             root.controller.activate()
             fileListView.setFocus()
         }
+    }
+
+    function focusFilter() {
+        root.controller.activate()
+        filterInput.forceActiveFocus()
+        filterInput.selectAll()
     }
 }

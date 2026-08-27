@@ -18,6 +18,7 @@
 #include <QDateTime>
 #include <QFileInfo>
 #include <QFileSystemWatcher>
+#include <QSet>
 #include <QtQml/qqmlregistration.h>
 
 struct FileItem {
@@ -106,7 +107,7 @@ public:
     Q_INVOKABLE void toggleShowHidden();
 
     QString filterPattern() const { return m_filterPattern; }
-    void setFilterPattern(const QString &pattern);
+    Q_INVOKABLE void setFilterPattern(const QString &pattern);
 
     // QML Invokables for interaction
     Q_INVOKABLE void refresh();
@@ -114,6 +115,10 @@ public:
     Q_INVOKABLE void toggleSelection(int index);
     Q_INVOKABLE void setRowSelected(int index, bool selected);
     Q_INVOKABLE void selectOnly(int index);
+    Q_INVOKABLE void selectRange(int fromIndex, int toIndex, bool clearOthers = true);
+    Q_INVOKABLE void beginRightDragSelection(int anchorIndex, bool clearOthers = false);
+    Q_INVOKABLE void updateRightDragSelection(int currentIndex);
+    Q_INVOKABLE void endRightDragSelection();
     Q_INVOKABLE void selectAll();
     Q_INVOKABLE void deselectAll();
     Q_INVOKABLE void invertSelection();
@@ -133,10 +138,8 @@ signals:
     void beforeDirectoryReset(bool isNewPath);
     void directoryReset(bool isNewPath);
 
-private slots:
-    void onDirectoryChanged(const QString &path);
-
 private:
+    void onDirectoryChanged(const QString &path);
     void loadDirectory();
     void sortItems();
     void sortInternal();
@@ -157,4 +160,9 @@ private:
 
     int m_selectedCount = 0;
     qint64 m_selectedSizeBytes = 0;
+
+    int m_rightDragAnchor = -1;
+    bool m_rightDragClearOthers = false;
+    bool m_rightDragSelect = true;
+    QSet<int> m_rightDragInitialSelection;
 };

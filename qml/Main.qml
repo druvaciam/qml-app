@@ -854,6 +854,17 @@ ApplicationWindow {
         onActivated: appCtrl.toggleHiddenFiles()
     }
 
+    Shortcut {
+        sequence: "Ctrl+F"
+        onActivated: {
+            if (appCtrl.activePanelIndex === 0) {
+                leftPanel.focusFilter()
+            } else {
+                rightPanel.focusFilter()
+            }
+        }
+    }
+
     // Dynamic modifier updates while dragging
     Item {
         anchors.fill: parent
