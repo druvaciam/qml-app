@@ -1,0 +1,53 @@
+# ==============================================================================
+# Linux Release Build & Test Container for QmlCommander
+# Uses Fedora 40 which provides native Qt 6.8.2 packages (matching host version)
+# ==============================================================================
+FROM fedora:40 AS builder
+
+# 1. Install build tools and Qt 6.8 development packages
+RUN dnf install -y --setopt=install_weak_deps=False \
+    gcc-c++ \
+    cmake \
+    ninja-build \
+    qt6-qtbase-devel \
+    qt6-qtdeclarative-devel \
+    qt6-qttools-devel \
+    mesa-libGL-devel \
+    mesa-dri-drivers \
+    xcb-util-cursor \
+    tar \
+    gzip \
+    xorg-x11-server-Xvfb \
+    which \
+    && dnf clean all
+
+WORKDIR /src
+
+# 2. Copy source code
+COPY CMakeLists.txt ./
+COPY src/ ./src/
+COPY qml/ ./qml/
+COPY resources/ ./resources/
+
+# 3. Configure & compile in Release mode
+RUN cmake -B build-release -G Ninja -DCMAKE_BUILD_TYPE=Release \
+    && ninja -C build-release
+
+# 4. Prepare standalone Linux release distribution
+RUN mkdir -p /app/dist-linux/bin \
+    && cp build-release/appQmlCommander /app/dist-linux/bin/ \
+    && cp -r build-release/QmlCommander /app/dist-linux/bin/ \
+    && cp resources/app_icon.png /app/dist-linux/ \
+    && tar -czvf /app/QmlCommander-Linux-x64.tar.gz -C /app/dist-linux .
+
+# 5. Verification: test headless and virtual display execution
+WORKDIR /app/dist-linux/bin
+RUN echo "=== Test 1: Testing headless QML initialization (QT_QPA_PLATFORM=offscreen) ===" \
+    && (QT_QPA_PLATFORM=offscreen timeout 3s ./appQmlCommander || [ $? -eq 124 ]) \
+    && echo "SUCCESS: Headless QML initialization passed without error!"
+
+RUN echo "=== Test 2: Testing X11 virtual display execution with xvfb-run ===" \
+    && (LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a -s "-screen 0 1280x800x24" timeout 3s ./appQmlCommander || [ $? -eq 124 ]) \
+    && echo "SUCCESS: Full X11 window lifecycle passed without error!"
+
+ENTRYPOINT ["/app/dist-linux/bin/appQmlCommander"]

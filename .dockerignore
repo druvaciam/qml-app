@@ -1,0 +1,10 @@
+build/
+build-*/
+dist/
+dist-*/
+.git
+*.zip
+*.tar.gz
+*.exe
+*.dll
+log.txt

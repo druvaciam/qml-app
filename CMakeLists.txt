@@ -84,7 +84,11 @@ target_link_libraries(appQmlCommander PRIVATE
 
 if(WIN32)
     target_link_libraries(appQmlCommander PRIVATE ole32 shell32 uuid comctl32)
-    set_target_properties(appQmlCommander PROPERTIES
-        WIN32_EXECUTABLE OFF
-    )
+    if(NOT DEFINED CMAKE_WIN32_EXECUTABLE)
+        if(CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+            set_target_properties(appQmlCommander PROPERTIES WIN32_EXECUTABLE ON)
+        else()
+            set_target_properties(appQmlCommander PROPERTIES WIN32_EXECUTABLE OFF)
+        endif()
+    endif()
 endif()

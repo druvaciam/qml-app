@@ -31,3 +31,223 @@ Architectural Roles & Separation of Responsibilities
                       ┌────────────────────────────┐
                       │   FileOperationsService    │  <-- Asynchronous Disk Engine
                       └────────────────────────────┘
+
+
+================================================================================
+# PUBLISH / RELEASE BUILD INSTRUCTIONS
+================================================================================
+
+--------------------------------------------------------------------------------
+1. WINDOWS: STANDALONE PORTABLE RELEASE BUILD
+--------------------------------------------------------------------------------
+Goal: Create a standalone distribution directory (or ZIP archive) containing 
+`appQmlCommander.exe` with all necessary Qt 6 runtime DLLs, QML modules, plugins,
+and C++ runtimes so it runs on any Windows PC without requiring Qt or a compiler.
+
+Step 1: Set up Environment Variables (PowerShell)
+-------------------------------------------------
+Ensure Qt 6, MinGW, CMake, and Ninja are available in your session PATH:
+  $env:PATH = "D:\Qt\6.8.2\mingw_64\bin;D:\Qt\Tools\mingw1310_64\bin;D:\Qt\Tools\Ninja;" + $env:PATH
+
+Step 2: Configure & Compile in Release Mode
+-------------------------------------------
+  # 1. Configure for Release (optimizations enabled, console window suppressed):
+  cmake -B build-release -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+  # 2. Compile:
+  ninja -C build-release
+
+  (Note: In Release mode, WIN32_EXECUTABLE is automatically set to ON, hiding 
+   the background command prompt. If you want the console visible for debugging,
+   add -DCMAKE_WIN32_EXECUTABLE=OFF to the cmake command).
+
+Step 3: Prepare the Output Directory & Deploy Qt (windeployqt)
+-------------------------------------------------------------
+  # 1. Create distribution folder:
+  New-Item -ItemType Directory -Force -Path dist-windows
+
+  # 2. Copy the compiled executable:
+  Copy-Item build-release\appQmlCommander.exe dist-windows\
+
+  # 3. Copy your application's compiled QML module from the build directory:
+  Copy-Item -Recurse -Force build-release\QmlCommander dist-windows\QmlCommander
+
+  # 4. Run windeployqt to automatically pull all Qt DLLs, plugins, and Qt QML modules:
+  windeployqt --release --qmldir qml dist-windows\appQmlCommander.exe
+
+Step 4: Copy MinGW C++ Runtime DLLs
+-----------------------------------
+Copy the compiler runtime libraries from your MinGW bin directory into `dist-windows`:
+  Copy-Item D:\Qt\Tools\mingw1310_64\bin\libgcc_s_seh-1.dll dist-windows\
+  Copy-Item D:\Qt\Tools\mingw1310_64\bin\libstdc++-6.dll   dist-windows\
+  Copy-Item D:\Qt\Tools\mingw1310_64\bin\libwinpthread-1.dll dist-windows\
+
+Step 5: Package / Distribute
+-----------------------------
+- Test the application by launching `dist-windows\appQmlCommander.exe`.
+- Create a standalone portable ZIP:
+  Compress-Archive -Path dist-windows\* -DestinationPath QmlCommander-Windows-x64.zip
+- Or wrap `dist-windows` into an installer using Inno Setup or NSIS.
+
+
+--------------------------------------------------------------------------------
+2. LINUX: STANDALONE APPIMAGE / RELEASE BUILD
+--------------------------------------------------------------------------------
+Goal: Create a portable `QmlCommander-x86_64.AppImage` (or tarball) that runs 
+on any modern Linux distribution (Ubuntu, Debian, Fedora, Arch, etc.) without 
+system dependency issues.
+
+Step 1: Install Build Dependencies on Linux
+-------------------------------------------
+On Ubuntu / Debian:
+  sudo apt update
+  sudo apt install -y build-essential cmake ninja-build \
+                      qt6-base-dev qt6-declarative-dev qt6-tools-dev \
+                      libgl1-mesa-dev
+
+On Fedora:
+  sudo dnf install -y gcc-c++ cmake ninja-build \
+                      qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qttools-devel \
+                      mesa-libGL-devel
+
+On Arch Linux:
+  sudo pacman -S --needed base-devel cmake ninja qt6-base qt6-declarative
+
+Step 2: Configure & Compile in Release Mode
+-------------------------------------------
+  cmake -B build-release -G Ninja -DCMAKE_BUILD_TYPE=Release
+  ninja -C build-release
+
+Step 3: Package as an AppImage (Recommended for Linux Distribution)
+------------------------------------------------------------------
+AppImage bundles the application and all required libraries into a single 
+executable file that runs on all Linux distros.
+
+1. Download linuxdeploy and the Qt plugin:
+   wget -c https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+   wget -c https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
+   chmod +x linuxdeploy*.AppImage
+
+2. Create a desktop entry file (`QmlCommander.desktop`):
+   cat << 'EOF' > QmlCommander.desktop
+   [Desktop Entry]
+   Type=Application
+   Name=QmlCommander
+   Comment=Dual-Pane Modern File Commander
+   Exec=appQmlCommander
+   Icon=app_icon
+   Categories=Utility;FileManager;
+   Terminal=false
+   EOF
+
+3. Build the AppImage:
+   export QML_SOURCES_PATHS=qml
+   ./linuxdeploy-x86_64.AppImage \
+       --appdir AppDir \
+       -e build-release/appQmlCommander \
+       -d QmlCommander.desktop \
+       -i resources/app_icon.png \
+       --plugin qt \
+       --output appimage
+
+   Result: `QmlCommander-x86_64.AppImage`
+   To run:
+     chmod +x QmlCommander-x86_64.AppImage
+     ./QmlCommander-x86_64.AppImage
+
+Step 4: Alternative - Simple Portable Tarball (.tar.gz)
+-------------------------------------------------------
+If distributing as a standard folder archive:
+  mkdir -p dist-linux/bin dist-linux/share/icons dist-linux/share/applications
+  cp build-release/appQmlCommander dist-linux/bin/
+  cp resources/app_icon.png dist-linux/share/icons/
+  cp QmlCommander.desktop dist-linux/share/applications/
+  tar -czvf QmlCommander-Linux-x64.tar.gz -C dist-linux .
+
+
+--------------------------------------------------------------------------------
+3. LINUX RELEASE BUILD & TEST VIA DOCKER & WSLg (FROM WINDOWS)
+--------------------------------------------------------------------------------
+You can build, package, and test the Linux release distribution directly on Windows
+using Docker Desktop and see the actual Linux GUI window on Windows using WSLg.
+
+Step 1: Build the Linux Release Container
+-----------------------------------------
+From the project root in PowerShell:
+  docker build -t qmlcommander-linux:latest -f Dockerfile.linux .
+
+This automatically:
+  - Compiles QmlCommander in Release mode using Qt 6.8.2 on Fedora 40.
+  - Generates the standalone `dist-linux/` folder and `QmlCommander-Linux-x64.tar.gz`.
+  - Runs headless tests (QT_QPA_PLATFORM=offscreen) and virtual X11 tests (xvfb-run).
+
+Step 2: Extract the Linux Release Binaries to Host
+-------------------------------------------------
+  docker create --name qml_extract qmlcommander-linux:latest
+  docker cp qml_extract:/app/QmlCommander-Linux-x64.tar.gz ./
+  docker cp qml_extract:/app/dist-linux ./
+  docker rm qml_extract
+
+Step 3: Enable WSL Integration in Docker Desktop (One-time setup)
+----------------------------------------------------------------
+To let WSL Ubuntu communicate with Docker and display the GUI via WSLg:
+  1. Open Docker Desktop.
+  2. Click Settings (gear icon ⚙) -> Resources -> WSL Integration.
+  3. Toggle "Ubuntu" to ON.
+  4. Click "Apply & restart".
+
+Step 4: Launch the Linux GUI Window on Windows via WSLg
+-------------------------------------------------------
+Open your WSL terminal (`wsl`) and run:
+  docker run --rm -it \
+    -e DISPLAY=$DISPLAY \
+    -e WAYLAND_DISPLAY=$WAYLAND_DISPLAY \
+    -e XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR \
+    -v /tmp/.X11-unix:/tmp/.X11-unix \
+    -v /mnt/wslg:/mnt/wslg \
+    qmlcommander-linux:latest
+
+The native Linux Qt6 QmlCommander window will pop up right on your Windows desktop!
+
+
+================================================================================
+# CONFIGURATION & SETTINGS STORAGE LOCATIONS
+================================================================================
+
+Window dimensions, screen position, maximized state, and panel session paths 
+are automatically persisted via Qt's QSettings API.
+
+1. Windows:
+-----------
+Settings are stored in the Windows Registry under:
+  HKEY_CURRENT_USER\Software\QtCommanderTeam\QmlCommander
+
+  - Window Geometry (...\QmlCommander\window):
+      width        (e.g., 2539)
+      height       (e.g., 1781)
+      x, y         (Window top-left screen position)
+      isMaximized  (true / false)
+
+  - Session State (...\QmlCommander\session):
+      leftPanelPath    (Last open directory in left pane)
+      rightPanelPath   (Last open directory in right pane)
+      activePanelIndex (0 for Left, 1 for Right)
+      leftShowHidden   (true / false)
+      rightShowHidden  (true / false)
+
+  View via PowerShell:
+    Get-ItemProperty -Path "HKCU:\Software\QtCommanderTeam\QmlCommander\*"
+
+  Reset to Defaults via PowerShell:
+    Remove-Item -Recurse -Force "HKCU:\Software\QtCommanderTeam\QmlCommander"
+
+2. Linux:
+---------
+Settings are stored in a standard INI-formatted text configuration file:
+  ~/.config/QtCommanderTeam/QmlCommander.conf
+
+  View via Terminal:
+    cat ~/.config/QtCommanderTeam/QmlCommander.conf
+
+  Reset to Defaults:
+    rm -f ~/.config/QtCommanderTeam/QmlCommander.conf

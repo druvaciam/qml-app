@@ -5,7 +5,11 @@
 #include <QFile>
 #include <QTextStream>
 
+#include <cstdio>
+
 static void customLog(QtMsgType, const QMessageLogContext &, const QString &msg) {
+    std::fprintf(stderr, "%s\n", qPrintable(msg));
+    std::fflush(stderr);
     QFile file(QStringLiteral("log.txt"));
     if (file.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)) {
         QTextStream out(&file);
@@ -32,6 +36,8 @@ int main(int argc, char *argv[])
     QQuickStyle::setStyle(QStringLiteral("Basic"));
 
     QQmlApplicationEngine engine;
+    engine.addImportPath(QStringLiteral("qrc:/"));
+    engine.addImportPath(QStringLiteral("qrc:/qt/qml"));
     
     QObject::connect(
         &engine,
@@ -55,6 +61,9 @@ int main(int argc, char *argv[])
     );
 
     engine.loadFromModule(QStringLiteral("QmlCommander"), QStringLiteral("Main"));
+    if (engine.rootObjects().isEmpty()) {
+        engine.load(QUrl(QStringLiteral("qrc:/QmlCommander/qml/Main.qml")));
+    }
 
     return app.exec();
 }
