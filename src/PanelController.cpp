@@ -76,7 +76,7 @@ void PanelController::navigateTo(const QString &path)
         return;
     }
 
-    if (m_model->currentPath() != cleanPath) {
+    if (!FileOperationsService::isSamePath(m_model->currentPath(), cleanPath)) {
         pushHistory(cleanPath);
         m_model->setCurrentPath(cleanPath);
     }

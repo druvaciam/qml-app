@@ -419,7 +419,7 @@ void AppController::moveSelected(const QStringList &customPaths, const QString &
         return;
     }
 
-    if (QDir::cleanPath(dst) == QDir::cleanPath(activePanel()->currentPath())) {
+    if (FileOperationsService::isSamePath(dst, activePanel()->currentPath())) {
         emit showMessageRequested(QStringLiteral("Move"), QStringLiteral("Source and target folders are identical. Use F2 to rename."));
         return;
     }
@@ -604,15 +604,7 @@ void AppController::pasteFromClipboard()
     if (isMove) {
         QStringList actualMoves;
         for (const QString &src : sourcePaths) {
-            QString srcDir = QDir::cleanPath(QFileInfo(src).absolutePath());
-            QString dstDir = QDir::cleanPath(destinationDir);
-            bool sameDir = false;
-#ifdef Q_OS_WIN
-            sameDir = (srcDir.compare(dstDir, Qt::CaseInsensitive) == 0);
-#else
-            sameDir = (srcDir == dstDir);
-#endif
-            if (!sameDir) {
+            if (!FileOperationsService::isSamePath(QFileInfo(src).absolutePath(), destinationDir)) {
                 actualMoves.append(src);
             }
         }

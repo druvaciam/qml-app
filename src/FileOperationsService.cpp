@@ -293,20 +293,23 @@ bool FileOperationsService::deleteRecursively(const QString &path)
     }
 }
 
+bool FileOperationsService::isSamePath(const QString &pathA, const QString &pathB)
+{
+    const QString cleanA = QDir::cleanPath(pathA);
+    const QString cleanB = QDir::cleanPath(pathB);
+#ifdef Q_OS_WIN
+    return cleanA.compare(cleanB, Qt::CaseInsensitive) == 0;
+#else
+    return cleanA == cleanB;
+#endif
+}
+
 QString FileOperationsService::generateCopyName(const QString &sourcePath, const QString &destinationDir)
 {
     QFileInfo srcInfo(sourcePath);
-    QString cleanSrcDir = QDir::cleanPath(srcInfo.absolutePath());
-    QString cleanDstDir = QDir::cleanPath(destinationDir);
 
     // If source and destination directories are different, keep original filename
-    bool sameDir = false;
-#ifdef Q_OS_WIN
-    sameDir = (cleanSrcDir.compare(cleanDstDir, Qt::CaseInsensitive) == 0);
-#else
-    sameDir = (cleanSrcDir == cleanDstDir);
-#endif
-    if (!sameDir) {
+    if (!isSamePath(srcInfo.absolutePath(), destinationDir)) {
         return srcInfo.fileName();
     }
 

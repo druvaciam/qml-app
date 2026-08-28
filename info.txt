@@ -254,3 +254,46 @@ Settings are stored in a standard INI-formatted text configuration file:
 
   Reset to Defaults:
     rm -f ~/.config/QtCommanderTeam/QmlCommander.conf
+
+
+================================================================================
+# KEYBOARD SHORTCUTS & CLIPBOARD OPERATIONS
+================================================================================
+
+1. Clipboard Operations (Explorer-Style):
+----------------------------------------
+- `Ctrl + C`: Copy selected / active files to clipboard (`CF_HDROP` / `x-special/gnome-copied-files`).
+- `Ctrl + X`: Cut selected / active files to clipboard (`DROPEFFECT_MOVE`).
+- `Ctrl + V`: Paste from clipboard into active pane:
+  - If pasting into the SAME folder as source: automatically creates `"origname - copy.ext"`, 
+    `"origname - copy (2).ext"`, etc.
+  - If pasting into a DIFFERENT folder: copies/moves normally.
+  - Seamlessly interoperates with Windows Explorer and desktop file managers.
+  - Input fields (filter search, inline rename, modal text fields) retain standard text 
+    copy/cut/paste behavior.
+
+2. Function Keys:
+-----------------
+- `F2`: Inline Rename
+- `F3`: Quick View (read-only preview dialog)
+- `F4`: Edit in the built-in editor. Files larger than the 256 KB preview limit open
+  read-only, because only the first part is loaded and saving would discard the rest.
+- `F5`: Copy to other panel / custom destination
+- `F6`: Move to other panel / custom destination
+- `F7`: Create New Folder
+- `F8` / `Delete`: Move to Recycle Bin / Trash
+- `Shift + Delete`: Permanently Delete
+
+3. Navigation & View:
+---------------------
+- `Tab`: Switch active panel (Left <-> Right)
+- `Backspace`: Go up one folder
+- `Space`: Toggle selection on the current item and move down
+- `Ctrl + A`: Select all
+- `Ctrl + F`: Jump to quick filter box
+- `Ctrl + U`: Swap the two panels
+- `Ctrl + E`: Open the active panel's folder in the other panel
+- `Ctrl + R`: Refresh both panels
+- `Ctrl + T`: Open a terminal in the active folder
+- `Ctrl + H`: Show / hide hidden and system files
+

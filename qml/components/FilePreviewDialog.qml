@@ -11,6 +11,7 @@ Rectangle {
     property var fileData: ({})
     property bool isOpen: false
     property bool isEditMode: false
+    property string saveError: ""
 
     visible: isOpen
     anchors.fill: parent
@@ -22,6 +23,7 @@ Rectangle {
     function open(path, editMode = false) {
         filePath = path
         isEditMode = editMode
+        saveError = ""
         fileData = previewService.loadPreview(path)
         if (fileData.isText) {
             editorText.text = fileData.content || ""
@@ -184,7 +186,7 @@ Rectangle {
 
                     TextArea {
                         id: editorText
-                        readOnly: !root.isEditMode
+                        readOnly: !root.isEditMode || Boolean(root.fileData?.isTruncated)
                         selectByMouse: true
                         font.family: Theme.fontMono
                         font.pixelSize: Theme.fontSizeBase
@@ -303,13 +305,32 @@ Rectangle {
                     Layout.fillWidth: true
                 }
 
+                // Only part of a large file is loaded, so saving would discard the rest.
+                Text {
+                    visible: Boolean(root.isEditMode && root.fileData?.isTruncated)
+                    text: "⚠ Only the first part of this file is loaded — read-only"
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.fontSizeSmall
+                    color: Theme.warning
+                    elide: Text.ElideRight
+                }
+
+                Text {
+                    visible: root.saveError.length > 0
+                    text: root.saveError
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.fontSizeSmall
+                    color: Theme.textDanger
+                    elide: Text.ElideRight
+                }
+
                 // Save button if edit mode
                 Rectangle {
                     Layout.preferredWidth: 100
                     Layout.preferredHeight: 30
                     Layout.alignment: Qt.AlignVCenter
                     radius: Theme.radiusSmall
-                    visible: Boolean(root.isEditMode && root.fileData?.isText)
+                    visible: Boolean(root.isEditMode && root.fileData?.isText && !root.fileData?.isTruncated)
                     color: saveMouse.containsMouse ? Theme.accentHover : Theme.accent
 
                     Text {
@@ -327,8 +348,11 @@ Rectangle {
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
                         onClicked: {
-                            root.previewService.saveTextFile(root.filePath, editorText.text)
-                            root.close()
+                            if (root.previewService.saveTextFile(root.filePath, editorText.text)) {
+                                root.close()
+                            } else {
+                                root.saveError = "Could not save — the file is read-only or in use. Your changes are still here."
+                            }
                         }
                     }
                 }

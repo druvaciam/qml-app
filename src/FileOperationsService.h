@@ -94,6 +94,13 @@ public:
     static QString generateCopyName(const QString &sourcePath, const QString &destinationDir);
 
     /**
+     * @brief Compare two paths for pointing at the same location.
+     * Cleans both paths and, on Windows, compares case-insensitively so that
+     * "C:/Docs" and "c:/docs" are recognised as the same directory.
+     */
+    static bool isSamePath(const QString &pathA, const QString &pathB);
+
+    /**
      * @brief Request cancellation of the currently active asynchronous operation.
      */
     Q_INVOKABLE void cancel();

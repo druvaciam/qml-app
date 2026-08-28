@@ -33,7 +33,7 @@ Item {
         let topIdx = listView.indexAt(10, listView.contentY + 5)
         if (topIdx >= 0 && topIdx < model.count) {
             let item = model.get(topIdx)
-            savedTopItemName = (item && item.name) ? item.name : ""
+            savedTopItemName = (item && item.fileName) ? item.fileName : ""
             savedTopItemOffset = listView.contentY - (topIdx * Theme.rowHeight)
         } else {
             savedTopItemName = ""
@@ -43,7 +43,7 @@ Item {
         let curIdx = listView.currentIndex
         if (curIdx >= 0 && curIdx < model.count) {
             let curItem = model.get(curIdx)
-            savedCurrentItemName = (curItem && curItem.name) ? curItem.name : ""
+            savedCurrentItemName = (curItem && curItem.fileName) ? curItem.fileName : ""
         } else {
             savedCurrentItemName = ""
         }

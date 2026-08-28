@@ -554,42 +554,38 @@ void FileListModel::sortInternal()
     auto beginIter = m_items.begin() + startIndex;
     auto endIter = m_items.end();
 
-    std::stable_sort(beginIter, endIter, [this](const FileItem &a, const FileItem &b) {
-        // Directories always first
-        if (a.isDir != b.isDir) {
-            return a.isDir > b.isDir;
+    std::stable_sort(beginIter, endIter, [this](const FileItem &lhs, const FileItem &rhs) {
+        // Directories always first, in both sort directions
+        if (lhs.isDir != rhs.isDir) {
+            return lhs.isDir > rhs.isDir;
         }
 
-        bool result = false;
+        // Swap the operands for a descending sort rather than negating the result:
+        // negating would return true for two equal items in both directions, which
+        // is not a strict weak ordering and is undefined behaviour for stable_sort.
+        const FileItem &a = m_sortAscending ? lhs : rhs;
+        const FileItem &b = m_sortAscending ? rhs : lhs;
+
         switch (m_sortColumn) {
         case SortByExt:
             if (a.extension != b.extension) {
-                result = a.extension.compare(b.extension, Qt::CaseInsensitive) < 0;
-            } else {
-                result = a.name.compare(b.name, Qt::CaseInsensitive) < 0;
+                return a.extension.compare(b.extension, Qt::CaseInsensitive) < 0;
             }
-            break;
+            return a.name.compare(b.name, Qt::CaseInsensitive) < 0;
         case SortBySize:
             if (a.size != b.size) {
-                result = a.size < b.size;
-            } else {
-                result = a.name.compare(b.name, Qt::CaseInsensitive) < 0;
+                return a.size < b.size;
             }
-            break;
+            return a.name.compare(b.name, Qt::CaseInsensitive) < 0;
         case SortByDate:
             if (a.lastModified != b.lastModified) {
-                result = a.lastModified < b.lastModified;
-            } else {
-                result = a.name.compare(b.name, Qt::CaseInsensitive) < 0;
+                return a.lastModified < b.lastModified;
             }
-            break;
+            return a.name.compare(b.name, Qt::CaseInsensitive) < 0;
         case SortByName:
         default:
-            result = a.name.compare(b.name, Qt::CaseInsensitive) < 0;
-            break;
+            return a.name.compare(b.name, Qt::CaseInsensitive) < 0;
         }
-
-        return m_sortAscending ? result : !result;
     });
 }
 

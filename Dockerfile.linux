@@ -32,6 +32,7 @@ RUN dnf install -y --setopt=install_weak_deps=False \
 WORKDIR /src
 
 # 2. Copy source code
+ARG CACHEBUST=1
 COPY CMakeLists.txt ./
 COPY src/ ./src/
 COPY qml/ ./qml/
@@ -48,6 +49,12 @@ RUN mkdir -p /app/dist-linux/bin \
     && cp resources/app_icon.png /app/dist-linux/ \
     && tar -czvf /app/QmlCommander-Linux-x64.tar.gz -C /app/dist-linux .
 
+# Set the locale before the verification steps so they run under the same
+# environment the container will actually use at runtime.
+ENV LC_ALL=C.UTF-8
+ENV XDG_RUNTIME_DIR=/mnt/wslg/runtime-dir
+ENV WAYLAND_DISPLAY=wayland-0
+
 # 5. Verification: test headless and virtual display execution
 WORKDIR /app/dist-linux/bin
 RUN echo "=== Test 1: Testing headless QML initialization (QT_QPA_PLATFORM=offscreen) ===" \
@@ -58,8 +65,10 @@ RUN echo "=== Test 2: Testing X11 virtual display execution with xvfb-run ===" \
     && (LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a -s "-screen 0 1280x800x24" timeout 3s ./appQmlCommander || [ $? -eq 124 ]) \
     && echo "SUCCESS: Full X11 window lifecycle passed without error!"
 
-ENV LC_ALL=C.UTF-8
-ENV XDG_RUNTIME_DIR=/mnt/wslg/runtime-dir
-ENV WAYLAND_DISPLAY=wayland-0
+# 6. Sample data for manual testing. The app opens $HOME on first run, so this
+#    is visible immediately. Each fixture exercises one recently fixed
+#    behaviour - see /root/testdata/README.txt inside the container.
+COPY scripts/seed_testdata.sh /tmp/seed_testdata.sh
+RUN sh /tmp/seed_testdata.sh && rm -f /tmp/seed_testdata.sh
 
 ENTRYPOINT ["/app/dist-linux/bin/appQmlCommander"]

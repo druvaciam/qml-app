@@ -7,6 +7,7 @@
 #include <QImageReader>
 #include <QMimeDatabase>
 #include <QProcess>
+#include <QSaveFile>
 #include <QUrl>
 #include <QStringConverter>
 #include <QStringDecoder>
@@ -191,15 +192,21 @@ QVariantMap FilePreviewService::loadPreview(const QString &filePath, int maxByte
 
 bool FilePreviewService::saveTextFile(const QString &filePath, const QString &content)
 {
-    QFile file(filePath);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
+    // QSaveFile writes to a temporary file and renames on commit(), so a failed
+    // or partial write leaves the original file untouched.
+    // No QIODevice::Text: the content was read as raw bytes and must be written
+    // back unchanged, otherwise existing CRLF pairs get a second CR each.
+    QSaveFile file(filePath);
+    if (!file.open(QIODevice::WriteOnly)) {
         return false;
     }
 
-    QByteArray utf8 = content.toUtf8();
-    qint64 written = file.write(utf8);
-    file.close();
-    return (written == utf8.size());
+    const QByteArray utf8 = content.toUtf8();
+    if (file.write(utf8) != utf8.size()) {
+        file.cancelWriting();
+        return false;
+    }
+    return file.commit();
 }
 
 bool FilePreviewService::openInDefaultApp(const QString &filePath)
@@ -225,11 +232,18 @@ bool FilePreviewService::openInTerminal(const QString &dirPath)
     }
 
 #if defined(Q_OS_WIN)
-    return QProcess::startDetached(QStringLiteral("powershell.exe"), {QStringLiteral("-NoExit"), QStringLiteral("-Command"), QString("Set-Location '%1'").arg(path)});
+    // A folder name may legally contain a single quote, which would otherwise close
+    // the quoted argument and let the rest of the name run as PowerShell code.
+    // PowerShell escapes a literal quote inside a single-quoted string by doubling it.
+    QString quoted = path;
+    quoted.replace(QLatin1Char('\''), QStringLiteral("''"));
+    return QProcess::startDetached(QStringLiteral("powershell.exe"), {QStringLiteral("-NoExit"), QStringLiteral("-Command"), QStringLiteral("Set-Location '%1'").arg(quoted)});
 #elif defined(Q_OS_MAC)
     return QProcess::startDetached(QStringLiteral("open"), {QStringLiteral("-a"), QStringLiteral("Terminal"), path});
 #else
-    if (QProcess::startDetached(QStringLiteral("xterm"), {QStringLiteral("-e"), QString("cd '%1' && exec bash").arg(path)})) {
+    // Pass the directory as the working directory rather than interpolating it
+    // into a shell command string.
+    if (QProcess::startDetached(QStringLiteral("xterm"), {QStringLiteral("-e"), QStringLiteral("bash")}, path)) {
         return true;
     }
     return QProcess::startDetached(QStringLiteral("xdg-open"), {path});
