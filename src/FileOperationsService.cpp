@@ -300,7 +300,13 @@ QString FileOperationsService::generateCopyName(const QString &sourcePath, const
     QString cleanDstDir = QDir::cleanPath(destinationDir);
 
     // If source and destination directories are different, keep original filename
-    if (cleanSrcDir != cleanDstDir) {
+    bool sameDir = false;
+#ifdef Q_OS_WIN
+    sameDir = (cleanSrcDir.compare(cleanDstDir, Qt::CaseInsensitive) == 0);
+#else
+    sameDir = (cleanSrcDir == cleanDstDir);
+#endif
+    if (!sameDir) {
         return srcInfo.fileName();
     }
 

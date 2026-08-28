@@ -604,7 +604,15 @@ void AppController::pasteFromClipboard()
     if (isMove) {
         QStringList actualMoves;
         for (const QString &src : sourcePaths) {
-            if (QDir::cleanPath(QFileInfo(src).absolutePath()) != QDir::cleanPath(destinationDir)) {
+            QString srcDir = QDir::cleanPath(QFileInfo(src).absolutePath());
+            QString dstDir = QDir::cleanPath(destinationDir);
+            bool sameDir = false;
+#ifdef Q_OS_WIN
+            sameDir = (srcDir.compare(dstDir, Qt::CaseInsensitive) == 0);
+#else
+            sameDir = (srcDir == dstDir);
+#endif
+            if (!sameDir) {
                 actualMoves.append(src);
             }
         }

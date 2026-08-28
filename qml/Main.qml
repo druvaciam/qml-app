@@ -870,6 +870,10 @@ ApplicationWindow {
         if (item && (item.hasOwnProperty("selectedText") || item.hasOwnProperty("cursorPosition"))) {
             return true
         }
+        if ((leftPanel && leftPanel.fileListView && leftPanel.fileListView.editingIndex !== -1) ||
+            (rightPanel && rightPanel.fileListView && rightPanel.fileListView.editingIndex !== -1)) {
+            return true
+        }
         return (copyMoveDialog.visible || previewDialog.visible || 
                 newFolderDialog.visible || renameDialog.visible || 
                 confirmDeleteDialog.visible || messageDialog.visible)
