@@ -89,6 +89,11 @@ public:
     static bool performRename(const QString &oldPath, const QString &newName, QString *errorOut = nullptr);
 
     /**
+     * @brief Generate unique copy name when copying into same directory (e.g. "foo - copy.txt", "foo - copy (2).txt").
+     */
+    static QString generateCopyName(const QString &sourcePath, const QString &destinationDir);
+
+    /**
      * @brief Request cancellation of the currently active asynchronous operation.
      */
     Q_INVOKABLE void cancel();

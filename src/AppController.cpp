@@ -6,6 +6,9 @@
 #include <QQuickWindow>
 #include <QAbstractNativeEventFilter>
 #include <QCoreApplication>
+#include <QClipboard>
+#include <QMimeData>
+#include <QUrl>
 
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -104,6 +107,9 @@ AppController::AppController(QObject *parent)
 
     connect(m_fileOps, &FileOperationsService::operationCompleted,
             this, &AppController::onFileOperationCompleted);
+
+    connect(QGuiApplication::clipboard(), &QClipboard::dataChanged,
+            this, &AppController::clipboardChanged);
 }
 
 AppController::~AppController()
@@ -495,4 +501,125 @@ QStringList AppController::urlsToPaths(const QList<QUrl> &urls) const
         }
     }
     return paths;
+}
+
+void AppController::copyToClipboard()
+{
+    QStringList targets = getActiveOrSelectedPaths();
+    if (targets.isEmpty()) {
+        return;
+    }
+
+    QClipboard *clipboard = QGuiApplication::clipboard();
+    QMimeData *mimeData = new QMimeData();
+
+    QList<QUrl> urls;
+    for (const QString &path : targets) {
+        urls.append(QUrl::fromLocalFile(path));
+    }
+    mimeData->setUrls(urls);
+
+    // Windows Explorer DropEffect format (DROPEFFECT_COPY = 1)
+    QByteArray dropEffect(4, 0);
+    dropEffect[0] = 1;
+    mimeData->setData(QStringLiteral("Preferred DropEffect"), dropEffect);
+
+    // GNOME/KDE format
+    QString gnomeData = QStringLiteral("copy\n");
+    for (const QUrl &url : urls) {
+        gnomeData += url.toString() + QLatin1Char('\n');
+    }
+    mimeData->setData(QStringLiteral("x-special/gnome-copied-files"), gnomeData.toUtf8());
+
+    clipboard->setMimeData(mimeData);
+    m_isCutOperation = false;
+    emit clipboardChanged();
+}
+
+void AppController::cutToClipboard()
+{
+    QStringList targets = getActiveOrSelectedPaths();
+    if (targets.isEmpty()) {
+        return;
+    }
+
+    QClipboard *clipboard = QGuiApplication::clipboard();
+    QMimeData *mimeData = new QMimeData();
+
+    QList<QUrl> urls;
+    for (const QString &path : targets) {
+        urls.append(QUrl::fromLocalFile(path));
+    }
+    mimeData->setUrls(urls);
+
+    // Windows Explorer DropEffect format (DROPEFFECT_MOVE = 2)
+    QByteArray dropEffect(4, 0);
+    dropEffect[0] = 2;
+    mimeData->setData(QStringLiteral("Preferred DropEffect"), dropEffect);
+
+    // GNOME/KDE format
+    QString gnomeData = QStringLiteral("cut\n");
+    for (const QUrl &url : urls) {
+        gnomeData += url.toString() + QLatin1Char('\n');
+    }
+    mimeData->setData(QStringLiteral("x-special/gnome-copied-files"), gnomeData.toUtf8());
+
+    clipboard->setMimeData(mimeData);
+    m_isCutOperation = true;
+    emit clipboardChanged();
+}
+
+void AppController::pasteFromClipboard()
+{
+    if (!activePanel()) return;
+    QString destinationDir = activePanel()->currentPath();
+    if (destinationDir.isEmpty()) return;
+
+    const QClipboard *clipboard = QGuiApplication::clipboard();
+    const QMimeData *mimeData = clipboard->mimeData();
+    if (!mimeData || !mimeData->hasUrls()) return;
+
+    QList<QUrl> urls = mimeData->urls();
+    QStringList sourcePaths;
+    for (const QUrl &url : urls) {
+        if (url.isLocalFile()) {
+            sourcePaths.append(url.toLocalFile());
+        }
+    }
+    if (sourcePaths.isEmpty()) return;
+
+    bool isMove = m_isCutOperation;
+    if (mimeData->hasFormat(QStringLiteral("Preferred DropEffect"))) {
+        QByteArray effect = mimeData->data(QStringLiteral("Preferred DropEffect"));
+        if (effect.size() >= 4 && effect.at(0) == 2) {
+            isMove = true;
+        }
+    } else if (mimeData->hasFormat(QStringLiteral("x-special/gnome-copied-files"))) {
+        QString data = QString::fromUtf8(mimeData->data(QStringLiteral("x-special/gnome-copied-files")));
+        if (data.startsWith(QStringLiteral("cut"))) {
+            isMove = true;
+        }
+    }
+
+    if (isMove) {
+        QStringList actualMoves;
+        for (const QString &src : sourcePaths) {
+            if (QDir::cleanPath(QFileInfo(src).absolutePath()) != QDir::cleanPath(destinationDir)) {
+                actualMoves.append(src);
+            }
+        }
+        m_isCutOperation = false;
+        if (!actualMoves.isEmpty()) {
+            m_fileOps->moveItems(actualMoves, destinationDir);
+        }
+    } else {
+        m_fileOps->copyItems(sourcePaths, destinationDir);
+    }
+}
+
+bool AppController::canPaste() const
+{
+    const QClipboard *clipboard = QGuiApplication::clipboard();
+    const QMimeData *mimeData = clipboard->mimeData();
+    return (mimeData && mimeData->hasUrls());
 }

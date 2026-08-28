@@ -865,6 +865,34 @@ ApplicationWindow {
         }
     }
 
+    function isInputFocused() {
+        let item = window.activeFocusItem
+        if (item && (item.hasOwnProperty("selectedText") || item.hasOwnProperty("cursorPosition"))) {
+            return true
+        }
+        return (copyMoveDialog.visible || previewDialog.visible || 
+                newFolderDialog.visible || renameDialog.visible || 
+                confirmDeleteDialog.visible || messageDialog.visible)
+    }
+
+    Shortcut {
+        sequences: ["Ctrl+C"]
+        enabled: !isInputFocused()
+        onActivated: appCtrl.copyToClipboard()
+    }
+
+    Shortcut {
+        sequences: ["Ctrl+X"]
+        enabled: !isInputFocused()
+        onActivated: appCtrl.cutToClipboard()
+    }
+
+    Shortcut {
+        sequences: ["Ctrl+V"]
+        enabled: !isInputFocused()
+        onActivated: appCtrl.pasteFromClipboard()
+    }
+
     // Dynamic modifier updates while dragging
     Item {
         anchors.fill: parent

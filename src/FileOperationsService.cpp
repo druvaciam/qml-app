@@ -4,6 +4,7 @@
 #include <QFileInfo>
 #include <QtConcurrent/QtConcurrent>
 #include <QMetaObject>
+#include <QRegularExpression>
 
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -50,7 +51,13 @@ static bool runWindowsShellOp(HWND hwndOwner, ShellOp op, const QStringList &sou
         IShellItem *psiItem = nullptr;
         if (SUCCEEDED(SHCreateItemFromParsingName(srcW.c_str(), NULL, IID_PPV_ARGS(&psiItem)))) {
             if (op == ShellOp::Copy) {
-                pfo->CopyItem(psiItem, psiDest, NULL, NULL);
+                QString copyName = FileOperationsService::generateCopyName(src, destDir);
+                if (copyName != QFileInfo(src).fileName()) {
+                    std::wstring copyNameW = copyName.toStdWString();
+                    pfo->CopyItem(psiItem, psiDest, copyNameW.c_str(), NULL);
+                } else {
+                    pfo->CopyItem(psiItem, psiDest, NULL, NULL);
+                }
             } else if (op == ShellOp::Move) {
                 pfo->MoveItem(psiItem, psiDest, NULL, NULL);
             } else if (op == ShellOp::Rename) {
@@ -286,6 +293,71 @@ bool FileOperationsService::deleteRecursively(const QString &path)
     }
 }
 
+QString FileOperationsService::generateCopyName(const QString &sourcePath, const QString &destinationDir)
+{
+    QFileInfo srcInfo(sourcePath);
+    QString cleanSrcDir = QDir::cleanPath(srcInfo.absolutePath());
+    QString cleanDstDir = QDir::cleanPath(destinationDir);
+
+    // If source and destination directories are different, keep original filename
+    if (cleanSrcDir != cleanDstDir) {
+        return srcInfo.fileName();
+    }
+
+    // Determine base name and extension
+    QString base;
+    QString ext;
+    if (srcInfo.isDir()) {
+        base = srcInfo.fileName();
+        ext = QString();
+    } else {
+        base = srcInfo.completeBaseName();
+        ext = srcInfo.suffix();
+        if (base.isEmpty()) {
+            base = srcInfo.fileName();
+            ext = QString();
+        }
+    }
+
+    // Check if base already ends with " - copy" or " - copy (N)"
+    static const QRegularExpression rxCopy(QStringLiteral(R"(^(.*) - copy(?:\s*\((\d+)\))?$)"), QRegularExpression::CaseInsensitiveOption);
+    auto match = rxCopy.match(base);
+    int startIndex = 1;
+    if (match.hasMatch()) {
+        base = match.captured(1);
+        if (match.captured(2).isEmpty()) {
+            startIndex = 2;
+        } else {
+            startIndex = match.captured(2).toInt() + 1;
+        }
+    }
+
+    auto makeCandidate = [&base, &ext](int index) -> QString {
+        QString name;
+        if (index == 1) {
+            name = QStringLiteral("%1 - copy").arg(base);
+        } else {
+            name = QStringLiteral("%1 - copy (%2)").arg(base).arg(index);
+        }
+        if (!ext.isEmpty()) {
+            name += QStringLiteral(".") + ext;
+        }
+        return name;
+    };
+
+    QString candidateName = makeCandidate(startIndex);
+    QString candidatePath = QDir::cleanPath(QDir(destinationDir).filePath(candidateName));
+
+    int copyIndex = (startIndex == 1) ? 2 : (startIndex + 1);
+    while (QFileInfo::exists(candidatePath)) {
+        candidateName = makeCandidate(copyIndex);
+        candidatePath = QDir::cleanPath(QDir(destinationDir).filePath(candidateName));
+        copyIndex++;
+    }
+
+    return candidateName;
+}
+
 void FileOperationsService::copyItems(const QStringList &sourcePaths, const QString &destinationDir)
 {
     if (m_isBusy || sourcePaths.isEmpty() || destinationDir.isEmpty()) return;
@@ -295,6 +367,24 @@ void FileOperationsService::copyItems(const QStringList &sourcePaths, const QStr
     startOperation(QStringLiteral("Copying files..."), QStringLiteral("Preparing copy..."), [this, hwnd, sourcePaths, destinationDir]() {
         QString err;
         bool ok = runWindowsShellOp(hwnd, ShellOp::Copy, sourcePaths, destinationDir, err);
+        if (!ok && err != QStringLiteral("Operation cancelled by user.")) {
+            // Fallback manual copy if shell operation failed
+            int total = countTotalItems(sourcePaths);
+            QMetaObject::invokeMethod(this, [this, total]() { m_totalItems = total; emit progressChanged(); }, Qt::QueuedConnection);
+
+            bool allOk = true;
+            int processed = 0;
+            for (const QString &src : sourcePaths) {
+                if (m_cancelRequested.loadAcquire()) return false;
+                QFileInfo srcInfo(src);
+                QString copyName = generateCopyName(src, destinationDir);
+                QString dst = QDir::cleanPath(QDir(destinationDir).filePath(copyName));
+                processed++;
+                updateProgress(srcInfo.fileName(), processed, total);
+                if (!copyRecursively(src, dst)) allOk = false;
+            }
+            ok = allOk;
+        }
         if (!ok) m_lastError = err;
         return ok;
     });
@@ -308,18 +398,8 @@ void FileOperationsService::copyItems(const QStringList &sourcePaths, const QStr
         for (const QString &src : sourcePaths) {
             if (m_cancelRequested.loadAcquire()) return false;
             QFileInfo srcInfo(src);
-            QString dst = QDir::cleanPath(QDir(destinationDir).filePath(srcInfo.fileName()));
-            if (QDir::cleanPath(src) == dst) {
-                QString base = srcInfo.completeBaseName();
-                QString ext = srcInfo.suffix();
-                int copyNum = 1;
-                do {
-                    QString copyName = (copyNum == 1) ? QStringLiteral("%1_copy").arg(base) : QStringLiteral("%1_copy%2").arg(base).arg(copyNum);
-                    if (!ext.isEmpty()) copyName += QStringLiteral(".") + ext;
-                    dst = QDir::cleanPath(QDir(destinationDir).filePath(copyName));
-                    copyNum++;
-                } while (QFileInfo::exists(dst));
-            }
+            QString copyName = generateCopyName(src, destinationDir);
+            QString dst = QDir::cleanPath(QDir(destinationDir).filePath(copyName));
             processed++;
             updateProgress(srcInfo.fileName(), processed, total);
             if (!copyRecursively(src, dst)) allOk = false;

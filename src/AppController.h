@@ -55,6 +55,7 @@ class AppController : public QObject {
   // Drag-and-drop transfer state
   Q_PROPERTY(QStringList draggedPaths READ draggedPaths WRITE setDraggedPaths
                  NOTIFY draggedPathsChanged)
+  Q_PROPERTY(bool isCutOperation READ isCutOperation NOTIFY clipboardChanged)
 
 public:
   explicit AppController(QObject *parent = nullptr);
@@ -136,6 +137,13 @@ public:
    */
   Q_INVOKABLE void openTerminalInActivePanel();
 
+  // --- Clipboard Integration (Ctrl+C / Ctrl+X / Ctrl+V) ---
+  Q_INVOKABLE void copyToClipboard();
+  Q_INVOKABLE void cutToClipboard();
+  Q_INVOKABLE void pasteFromClipboard();
+  Q_INVOKABLE bool canPaste() const;
+  bool isCutOperation() const { return m_isCutOperation; }
+
   // --- Persistence ---
   Q_INVOKABLE void saveSession();
   Q_INVOKABLE void loadSession();
@@ -148,6 +156,7 @@ signals:
   void showMessageRequested(const QString &title, const QString &message);
   void requestPreviewFile(const QString &filePath);
   void draggedPathsChanged();
+  void clipboardChanged();
 
 private:
   void onFileOperationCompleted(bool success, const QString &message);
@@ -162,4 +171,5 @@ private:
   FilePreviewService *m_preview = nullptr;
   int m_activePanelIndex = 0;
   QStringList m_draggedPaths;
+  bool m_isCutOperation = false;
 };
