@@ -48,11 +48,7 @@ ApplicationWindow {
             previewDialog.open(filePath, false)
         }
 
-        onShowMessageRequested: (title, message) => {
-            messageDialog.title = title
-            messageDialog.messageText = message
-            messageDialog.open()
-        }
+        // showMessageRequested is handled by the Connections block further down.
     }
 
     // Global Drag State (window-level coordinate system, never clipped)
@@ -667,14 +663,6 @@ ApplicationWindow {
         onClosed: restoreActiveFocus()
     }
 
-    RenameDialog {
-        id: renameDialog
-        onAccepted: (oldPath, newName) => {
-            appCtrl.renameActiveItem(oldPath, newName)
-        }
-        onClosed: restoreActiveFocus()
-    }
-
     ConfirmDeleteDialog {
         id: confirmDeleteDialog
         onAccepted: (items, permanent) => {
@@ -690,7 +678,10 @@ ApplicationWindow {
         property string messageText: ""
         property bool isOpen: false
 
-        function open() { isOpen = true }
+        function open() {
+            isOpen = true
+            forceActiveFocus()
+        }
         function close() {
             isOpen = false
             restoreActiveFocus()
@@ -700,6 +691,14 @@ ApplicationWindow {
         anchors.fill: parent
         color: "#a0000000"
         z: 120
+        focus: isOpen
+
+        // Without this the panels underneath stay clickable while an error is
+        // on screen. CopyMoveDialog and ConfirmDeleteDialog both do the same.
+        MouseArea {
+            anchors.fill: parent
+            onClicked: {}
+        }
 
         Rectangle {
             width: 380
@@ -758,8 +757,9 @@ ApplicationWindow {
             }
         }
 
-        Keys.onEscapePressed: messageDialog.close()
-        Keys.onReturnPressed: messageDialog.close()
+        Keys.onEscapePressed: (event) => { messageDialog.close(); event.accepted = true }
+        Keys.onReturnPressed: (event) => { messageDialog.close(); event.accepted = true }
+        Keys.onEnterPressed: (event) => { messageDialog.close(); event.accepted = true }
     }
 
     Connections {
@@ -875,7 +875,7 @@ ApplicationWindow {
             return true
         }
         return (copyMoveDialog.visible || previewDialog.visible || 
-                newFolderDialog.visible || renameDialog.visible || 
+                newFolderDialog.visible ||
                 confirmDeleteDialog.visible || messageDialog.visible)
     }
 

@@ -25,7 +25,10 @@ static bool runWindowsShellOp(HWND hwndOwner, ShellOp op, const QStringList &sou
         return false;
     }
 
-    DWORD flags = FOF_NOCONFIRMMKDIR | FOF_NOCONFIRMATION;
+    // FOF_NOCONFIRMATION is deliberately NOT set: it answers "Yes to All" to the
+    // Replace-or-Skip prompt, so same-named files at the destination would be
+    // overwritten silently. Let the shell ask, exactly as Explorer does.
+    DWORD flags = FOF_NOCONFIRMMKDIR;
     if (op != ShellOp::Delete) {
         flags |= FOF_ALLOWUNDO; // Undoable copy/move or Recycle Bin
     }
@@ -99,10 +102,13 @@ FileOperationsService::FileOperationsService(QObject *parent)
     connect(&m_futureWatcher, &QFutureWatcher<bool>::finished, this, [this]() {
         bool success = m_futureWatcher.result();
         setBusy(false);
-        if (m_cancelRequested.loadAcquire()) {
-            emit operationCompleted(false, QStringLiteral("Operation cancelled by user."));
-        } else if (success) {
+        setNativeProgress(false);
+        // Check success first. A cancel request that arrived too late to stop the
+        // work must not report a completed operation as cancelled.
+        if (success) {
             emit operationCompleted(true, QStringLiteral("Operation completed successfully."));
+        } else if (m_cancelRequested.loadAcquire()) {
+            emit operationCompleted(false, QStringLiteral("Operation cancelled by user."));
         } else {
             QString err = m_lastError.isEmpty() ? QStringLiteral("Operation finished with errors.") : m_lastError;
             emit operationCompleted(false, err);
@@ -129,6 +135,14 @@ void FileOperationsService::setOperationTitle(const QString &title)
     if (m_operationTitle != title) {
         m_operationTitle = title;
         emit operationTitleChanged(m_operationTitle);
+    }
+}
+
+void FileOperationsService::setNativeProgress(bool native)
+{
+    if (m_nativeProgress != native) {
+        m_nativeProgress = native;
+        emit nativeProgressChanged(m_nativeProgress);
     }
 }
 
@@ -192,33 +206,38 @@ int FileOperationsService::countTotalItems(const QStringList &paths)
     return total;
 }
 
-bool FileOperationsService::copyRecursively(const QString &srcPath, const QString &dstPath)
+bool FileOperationsService::copyRecursively(const QString &srcPath, const QString &dstPath,
+                                            int &processed, int total, QString &error)
 {
     if (m_cancelRequested.loadAcquire()) return false;
 
     QFileInfo srcInfo(srcPath);
     if (!srcInfo.exists()) {
-        m_lastError = QStringLiteral("Source does not exist: %1").arg(srcPath);
+        error = QStringLiteral("Source does not exist: %1").arg(srcPath);
         return false;
     }
 
     if (srcInfo.isDir()) {
+        // List the source BEFORE creating the destination. Duplicating a folder
+        // into its own parent would otherwise find the new folder in this listing
+        // and copy it into itself.
+        QDir dir(srcPath);
+        const QFileInfoList entries = dir.entryInfoList(QDir::AllEntries | QDir::NoDotAndDotDot | QDir::Hidden);
+
         if (!QDir().mkpath(dstPath)) {
-            m_lastError = QStringLiteral("Cannot create folder '%1' (Access denied or invalid path)").arg(dstPath);
+            error = QStringLiteral("Cannot create folder '%1' (Access denied or invalid path)").arg(dstPath);
             return false;
         }
-        QDir dir(srcPath);
-        QFileInfoList entries = dir.entryInfoList(QDir::AllEntries | QDir::NoDotAndDotDot | QDir::Hidden);
 
         for (const auto &entry : entries) {
             if (m_cancelRequested.loadAcquire()) return false;
             QString srcItem = entry.absoluteFilePath();
             QString dstItem = QDir::cleanPath(QDir(dstPath).filePath(entry.fileName()));
 
-            m_processedItems++;
-            updateProgress(entry.fileName(), m_processedItems, m_totalItems);
+            processed++;
+            updateProgress(entry.fileName(), processed, total);
 
-            if (!copyRecursively(srcItem, dstItem)) {
+            if (!copyRecursively(srcItem, dstItem, processed, total, error)) {
                 return false;
             }
         }
@@ -227,49 +246,63 @@ bool FileOperationsService::copyRecursively(const QString &srcPath, const QStrin
         // Target file
         QString parentDir = QFileInfo(dstPath).absolutePath();
         if (!QDir().mkpath(parentDir)) {
-            m_lastError = QStringLiteral("Cannot create destination directory '%1' (Access denied)").arg(parentDir);
+            error = QStringLiteral("Cannot create destination directory '%1' (Access denied)").arg(parentDir);
             return false;
         }
-        if (QFile::exists(dstPath)) {
-            if (!QFile::remove(dstPath)) {
-                m_lastError = QStringLiteral("Cannot overwrite existing file '%1' (File in use or access denied)").arg(dstPath);
-                return false;
-            }
-        }
+
+        // Write beside the destination first and swap it in only once the copy
+        // succeeded, so a failure never destroys the file already there.
+        const QString partPath = dstPath + QStringLiteral(".qmlcommander-part");
+        QFile::remove(partPath);
+
         QFile srcFile(srcPath);
-        if (!srcFile.copy(dstPath)) {
-            m_lastError = QStringLiteral("Cannot copy '%1' to '%2': %3").arg(srcInfo.fileName(), dstPath, srcFile.errorString());
+        if (!srcFile.copy(partPath)) {
+            error = QStringLiteral("Cannot copy '%1' to '%2': %3").arg(srcInfo.fileName(), dstPath, srcFile.errorString());
+            QFile::remove(partPath);
+            return false;
+        }
+        if (QFile::exists(dstPath) && !QFile::remove(dstPath)) {
+            error = QStringLiteral("Cannot overwrite existing file '%1' (File in use or access denied)").arg(dstPath);
+            QFile::remove(partPath);
+            return false;
+        }
+        if (!QFile::rename(partPath, dstPath)) {
+            error = QStringLiteral("Cannot finish writing '%1' (Access denied)").arg(dstPath);
+            QFile::remove(partPath);
             return false;
         }
         return true;
     }
 }
 
-bool FileOperationsService::moveRecursively(const QString &srcPath, const QString &dstPath)
+bool FileOperationsService::moveRecursively(const QString &srcPath, const QString &dstPath,
+                                            int &processed, int total, QString &error)
 {
     if (m_cancelRequested.loadAcquire()) return false;
 
     QFileInfo srcInfo(srcPath);
-    if (!srcInfo.exists()) return false;
-
-    // Try rename first
-    QDir().mkpath(QFileInfo(dstPath).absolutePath());
-    if (QFile::exists(dstPath)) {
-        QFile::remove(dstPath);
+    if (!srcInfo.exists()) {
+        error = QStringLiteral("Source does not exist: %1").arg(srcPath);
+        return false;
     }
 
-    if (QFile::rename(srcPath, dstPath)) {
+    QDir().mkpath(QFileInfo(dstPath).absolutePath());
+
+    // Plain rename only when nothing is in the way. The destination is never
+    // removed up front: a later failure would leave it destroyed for nothing.
+    if (!QFile::exists(dstPath) && QFile::rename(srcPath, dstPath)) {
         return true;
     }
 
-    // Fallback: Copy and then delete
-    if (copyRecursively(srcPath, dstPath)) {
-        return deleteRecursively(srcPath);
+    // Fallback: copy (which swaps the destination in safely) and then delete
+    if (copyRecursively(srcPath, dstPath, processed, total, error)) {
+        return deleteRecursively(srcPath, processed, total, error);
     }
     return false;
 }
 
-bool FileOperationsService::deleteRecursively(const QString &path)
+bool FileOperationsService::deleteRecursively(const QString &path,
+                                              int &processed, int total, QString &error)
 {
     if (m_cancelRequested.loadAcquire()) return false;
 
@@ -278,19 +311,27 @@ bool FileOperationsService::deleteRecursively(const QString &path)
 
     if (info.isDir()) {
         QDir dir(path);
-        QFileInfoList entries = dir.entryInfoList(QDir::AllEntries | QDir::NoDotAndDotDot | QDir::Hidden);
+        const QFileInfoList entries = dir.entryInfoList(QDir::AllEntries | QDir::NoDotAndDotDot | QDir::Hidden);
         for (const auto &entry : entries) {
             if (m_cancelRequested.loadAcquire()) return false;
-            m_processedItems++;
-            updateProgress(entry.fileName(), m_processedItems, m_totalItems);
-            if (!deleteRecursively(entry.absoluteFilePath())) {
+            processed++;
+            updateProgress(entry.fileName(), processed, total);
+            if (!deleteRecursively(entry.absoluteFilePath(), processed, total, error)) {
                 return false;
             }
         }
-        return dir.rmdir(path);
-    } else {
-        return QFile::remove(path);
+        if (!dir.rmdir(path)) {
+            error = QStringLiteral("Cannot remove folder '%1' (Not empty or access denied)").arg(path);
+            return false;
+        }
+        return true;
     }
+
+    if (!QFile::remove(path)) {
+        error = QStringLiteral("Cannot delete '%1' (File in use or access denied)").arg(path);
+        return false;
+    }
+    return true;
 }
 
 bool FileOperationsService::isSamePath(const QString &pathA, const QString &pathB)
@@ -302,6 +343,29 @@ bool FileOperationsService::isSamePath(const QString &pathA, const QString &path
 #else
     return cleanA == cleanB;
 #endif
+}
+
+bool FileOperationsService::destinationInsideSource(const QString &sourcePath, const QString &destinationDir)
+{
+    QFileInfo si(sourcePath);
+    if (!si.isDir()) return false;
+    const QString s = QDir::cleanPath(si.absoluteFilePath());
+    const QString d = QDir::cleanPath(destinationDir);
+#ifdef Q_OS_WIN
+    return d.startsWith(s + QLatin1Char('/'), Qt::CaseInsensitive);
+#else
+    return d.startsWith(s + QLatin1Char('/'), Qt::CaseSensitive);
+#endif
+}
+
+bool FileOperationsService::isPlainFileName(const QString &name)
+{
+    const QString t = name.trimmed();
+    return !t.isEmpty()
+        && !t.contains(QLatin1Char('/'))
+        && !t.contains(QLatin1Char('\\'))
+        && t != QStringLiteral(".")
+        && t != QStringLiteral("..");
 }
 
 QString FileOperationsService::generateCopyName(const QString &sourcePath, const QString &destinationDir)
@@ -370,60 +434,61 @@ QString FileOperationsService::generateCopyName(const QString &sourcePath, const
 void FileOperationsService::copyItems(const QStringList &sourcePaths, const QString &destinationDir)
 {
     if (m_isBusy || sourcePaths.isEmpty() || destinationDir.isEmpty()) return;
+    if (!checkNotIntoOwnSubfolder(sourcePaths, destinationDir, QStringLiteral("copy"))) return;
 
 #ifdef Q_OS_WIN
     HWND hwnd = GetForegroundWindow();
+    setNativeProgress(true);
     startOperation(QStringLiteral("Copying files..."), QStringLiteral("Preparing copy..."), [this, hwnd, sourcePaths, destinationDir]() {
         QString err;
         bool ok = runWindowsShellOp(hwnd, ShellOp::Copy, sourcePaths, destinationDir, err);
         if (!ok && err != QStringLiteral("Operation cancelled by user.")) {
             // Fallback manual copy if shell operation failed
-            int total = countTotalItems(sourcePaths);
-            QMetaObject::invokeMethod(this, [this, total]() { m_totalItems = total; emit progressChanged(); }, Qt::QueuedConnection);
-
-            bool allOk = true;
-            int processed = 0;
-            for (const QString &src : sourcePaths) {
-                if (m_cancelRequested.loadAcquire()) return false;
-                QFileInfo srcInfo(src);
-                QString copyName = generateCopyName(src, destinationDir);
-                QString dst = QDir::cleanPath(QDir(destinationDir).filePath(copyName));
-                processed++;
-                updateProgress(srcInfo.fileName(), processed, total);
-                if (!copyRecursively(src, dst)) allOk = false;
-            }
-            ok = allOk;
+            QMetaObject::invokeMethod(this, [this]() { setNativeProgress(false); }, Qt::QueuedConnection);
+            QString fallbackErr;
+            ok = runPortableCopy(sourcePaths, destinationDir, fallbackErr);
+            if (!ok) err = fallbackErr.isEmpty() ? err : fallbackErr;
         }
         if (!ok) m_lastError = err;
         return ok;
     });
 #else
     startOperation(QStringLiteral("Copying files..."), QStringLiteral("Preparing copy..."), [this, sourcePaths, destinationDir]() {
-        int total = countTotalItems(sourcePaths);
-        QMetaObject::invokeMethod(this, [this, total]() { m_totalItems = total; emit progressChanged(); }, Qt::QueuedConnection);
-
-        bool allOk = true;
-        int processed = 0;
-        for (const QString &src : sourcePaths) {
-            if (m_cancelRequested.loadAcquire()) return false;
-            QFileInfo srcInfo(src);
-            QString copyName = generateCopyName(src, destinationDir);
-            QString dst = QDir::cleanPath(QDir(destinationDir).filePath(copyName));
-            processed++;
-            updateProgress(srcInfo.fileName(), processed, total);
-            if (!copyRecursively(src, dst)) allOk = false;
-        }
-        return allOk;
+        QString err;
+        bool ok = runPortableCopy(sourcePaths, destinationDir, err);
+        if (!ok) m_lastError = err;
+        return ok;
     });
 #endif
+}
+
+bool FileOperationsService::runPortableCopy(const QStringList &sourcePaths, const QString &destinationDir, QString &error)
+{
+    const int total = countTotalItems(sourcePaths);
+    QMetaObject::invokeMethod(this, [this, total]() { m_totalItems = total; emit progressChanged(); }, Qt::QueuedConnection);
+
+    bool allOk = true;
+    int processed = 0;
+    for (const QString &src : sourcePaths) {
+        if (m_cancelRequested.loadAcquire()) return false;
+        QFileInfo srcInfo(src);
+        QString copyName = generateCopyName(src, destinationDir);
+        QString dst = QDir::cleanPath(QDir(destinationDir).filePath(copyName));
+        processed++;
+        updateProgress(srcInfo.fileName(), processed, total);
+        if (!copyRecursively(src, dst, processed, total, error)) allOk = false;
+    }
+    return allOk;
 }
 
 void FileOperationsService::moveItems(const QStringList &sourcePaths, const QString &destinationDir)
 {
     if (m_isBusy || sourcePaths.isEmpty() || destinationDir.isEmpty()) return;
+    if (!checkNotIntoOwnSubfolder(sourcePaths, destinationDir, QStringLiteral("move"))) return;
 
 #ifdef Q_OS_WIN
     HWND hwnd = GetForegroundWindow();
+    setNativeProgress(true);
     startOperation(QStringLiteral("Moving files..."), QStringLiteral("Preparing move..."), [this, hwnd, sourcePaths, destinationDir]() {
         QString err;
         bool ok = runWindowsShellOp(hwnd, ShellOp::Move, sourcePaths, destinationDir, err);
@@ -432,23 +497,40 @@ void FileOperationsService::moveItems(const QStringList &sourcePaths, const QStr
     });
 #else
     startOperation(QStringLiteral("Moving files..."), QStringLiteral("Preparing move..."), [this, sourcePaths, destinationDir]() {
-        int total = countTotalItems(sourcePaths);
+        const int total = countTotalItems(sourcePaths);
         QMetaObject::invokeMethod(this, [this, total]() { m_totalItems = total; emit progressChanged(); }, Qt::QueuedConnection);
 
         bool allOk = true;
         int processed = 0;
+        QString err;
         for (const QString &src : sourcePaths) {
             if (m_cancelRequested.loadAcquire()) return false;
             QFileInfo srcInfo(src);
             QString dst = QDir::cleanPath(QDir(destinationDir).filePath(srcInfo.fileName()));
-            if (QDir::cleanPath(src) == dst) continue;
+            if (isSamePath(src, dst)) continue;
             processed++;
             updateProgress(srcInfo.fileName(), processed, total);
-            if (!moveRecursively(src, dst)) allOk = false;
+            if (!moveRecursively(src, dst, processed, total, err)) allOk = false;
         }
+        if (!allOk) m_lastError = err;
         return allOk;
     });
 #endif
+}
+
+bool FileOperationsService::checkNotIntoOwnSubfolder(const QStringList &sourcePaths,
+                                                     const QString &destinationDir,
+                                                     const QString &verb)
+{
+    for (const QString &src : sourcePaths) {
+        if (destinationInsideSource(src, destinationDir)) {
+            emit operationCompleted(false,
+                QStringLiteral("Cannot %1 '%2' into a folder inside itself.")
+                    .arg(verb, QFileInfo(src).fileName()));
+            return false;
+        }
+    }
+    return true;
 }
 
 void FileOperationsService::deleteItems(const QStringList &paths, bool permanent)
@@ -459,11 +541,12 @@ void FileOperationsService::deleteItems(const QStringList &paths, bool permanent
     QString status = permanent ? QStringLiteral("Deleting permanently...") : QStringLiteral("Moving to Recycle Bin...");
 
     startOperation(title, status, [this, paths, permanent]() {
-        int total = countTotalItems(paths);
+        const int total = countTotalItems(paths);
         QMetaObject::invokeMethod(this, [this, total]() { m_totalItems = total; emit progressChanged(); }, Qt::QueuedConnection);
 
         bool allOk = true;
         int processed = 0;
+        QString err;
         QStringList fallbackPaths;
 
         for (const QString &path : paths) {
@@ -474,7 +557,7 @@ void FileOperationsService::deleteItems(const QStringList &paths, bool permanent
 
             if (permanent) {
                 if (info.isDir()) {
-                    if (!deleteRecursively(path)) {
+                    if (!deleteRecursively(path, processed, total, err)) {
                         fallbackPaths.append(path);
                     }
                 } else {
@@ -520,8 +603,8 @@ void FileOperationsService::deleteItems(const QStringList &paths, bool permanent
 
 bool FileOperationsService::createDirectory(const QString &parentPath, const QString &dirName)
 {
-    if (parentPath.isEmpty() || dirName.trimmed().isEmpty()) {
-        emit operationError(QStringLiteral("Invalid directory name."));
+    if (parentPath.isEmpty() || !isPlainFileName(dirName)) {
+        emit operationError(QStringLiteral("Invalid folder name. It cannot be empty or contain \\ or /."));
         return false;
     }
 
@@ -543,8 +626,8 @@ bool FileOperationsService::createDirectory(const QString &parentPath, const QSt
 bool FileOperationsService::performRename(const QString &oldPath, const QString &newName, QString *errorOut)
 {
     QString trimmed = newName.trimmed();
-    if (oldPath.isEmpty() || trimmed.isEmpty()) {
-        if (errorOut) *errorOut = QStringLiteral("Invalid name.");
+    if (oldPath.isEmpty() || !isPlainFileName(trimmed)) {
+        if (errorOut) *errorOut = QStringLiteral("Invalid name. It cannot be empty or contain \\ or /.");
         return false;
     }
 

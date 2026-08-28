@@ -1050,20 +1050,11 @@ Item {
             } else if (event.key === Qt.Key_Backspace) {
                 rootListView.controller.navigateUp()
                 event.accepted = true
-            } else if (event.key === Qt.Key_F2) {
-                rootListView.startInlineRename()
-                event.accepted = true
-            } else if (event.key === Qt.Key_Delete) {
-                let isShift = (event.modifiers & Qt.ShiftModifier) !== 0
-                rootListView.requestDelete(isShift)
-                event.accepted = true
-            } else if (event.key === Qt.Key_F5) {
-                rootListView.requestCopy()
-                event.accepted = true
-            } else if (event.key === Qt.Key_F6) {
-                rootListView.requestMove()
-                event.accepted = true
             }
+            // F2, F5, F6 and Delete are declared as window-level Shortcut
+            // elements in Main.qml. Shortcuts consume the key before it reaches
+            // here, so handling them again would only create a second place to
+            // edit and get out of step.
         }
 
         // Shortcut for Select All: Ctrl+A handled at view level

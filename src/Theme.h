@@ -77,48 +77,48 @@ public:
     explicit Theme(QObject *parent = nullptr) : QObject(parent) {}
 
     // Backgrounds
-    QColor bgApp() const { return QColor(QStringLiteral("#121418")); }
-    QColor bgPanel() const { return QColor(QStringLiteral("#1a1d24")); }
-    QColor bgPanelActive() const { return QColor(QStringLiteral("#1e222b")); }
-    QColor bgHeader() const { return QColor(QStringLiteral("#242933")); }
-    QColor bgRowAlt() const { return QColor(QStringLiteral("#16191f")); }
-    QColor bgHover() const { return QColor(QStringLiteral("#283040")); }
-    QColor bgSelected() const { return QColor(QStringLiteral("#1e3a5f")); }
-    QColor bgSelectedHover() const { return QColor(QStringLiteral("#254875")); }
-    QColor bgDialog() const { return QColor(QStringLiteral("#1f232c")); }
-    QColor bgInput() const { return QColor(QStringLiteral("#13161c")); }
+    QColor bgApp() const { static const QColor c(QStringLiteral("#121418")); return c; }
+    QColor bgPanel() const { static const QColor c(QStringLiteral("#1a1d24")); return c; }
+    QColor bgPanelActive() const { static const QColor c(QStringLiteral("#1e222b")); return c; }
+    QColor bgHeader() const { static const QColor c(QStringLiteral("#242933")); return c; }
+    QColor bgRowAlt() const { static const QColor c(QStringLiteral("#16191f")); return c; }
+    QColor bgHover() const { static const QColor c(QStringLiteral("#283040")); return c; }
+    QColor bgSelected() const { static const QColor c(QStringLiteral("#1e3a5f")); return c; }
+    QColor bgSelectedHover() const { static const QColor c(QStringLiteral("#254875")); return c; }
+    QColor bgDialog() const { static const QColor c(QStringLiteral("#1f232c")); return c; }
+    QColor bgInput() const { static const QColor c(QStringLiteral("#13161c")); return c; }
 
     // Accents
-    QColor accent() const { return QColor(QStringLiteral("#38bdf8")); }
-    QColor accentHover() const { return QColor(QStringLiteral("#0ea5e9")); }
-    QColor accentActive() const { return QColor(QStringLiteral("#0284c7")); }
-    QColor success() const { return QColor(QStringLiteral("#4ade80")); }
-    QColor warning() const { return QColor(QStringLiteral("#fbbf24")); }
-    QColor danger() const { return QColor(QStringLiteral("#f87171")); }
-    QColor dangerHover() const { return QColor(QStringLiteral("#ef4444")); }
+    QColor accent() const { static const QColor c(QStringLiteral("#38bdf8")); return c; }
+    QColor accentHover() const { static const QColor c(QStringLiteral("#0ea5e9")); return c; }
+    QColor accentActive() const { static const QColor c(QStringLiteral("#0284c7")); return c; }
+    QColor success() const { static const QColor c(QStringLiteral("#4ade80")); return c; }
+    QColor warning() const { static const QColor c(QStringLiteral("#fbbf24")); return c; }
+    QColor danger() const { static const QColor c(QStringLiteral("#f87171")); return c; }
+    QColor dangerHover() const { static const QColor c(QStringLiteral("#ef4444")); return c; }
 
     // Borders
-    QColor borderSubtle() const { return QColor(QStringLiteral("#2d3342")); }
-    QColor borderActive() const { return QColor(QStringLiteral("#38bdf8")); }
-    QColor borderFocus() const { return QColor(QStringLiteral("#60a5fa")); }
+    QColor borderSubtle() const { static const QColor c(QStringLiteral("#2d3342")); return c; }
+    QColor borderActive() const { static const QColor c(QStringLiteral("#38bdf8")); return c; }
+    QColor borderFocus() const { static const QColor c(QStringLiteral("#60a5fa")); return c; }
 
     // Text Colors
-    QColor textPrimary() const { return QColor(QStringLiteral("#f3f4f6")); }
-    QColor textSecondary() const { return QColor(QStringLiteral("#9ca3af")); }
-    QColor textMuted() const { return QColor(QStringLiteral("#6b7280")); }
-    QColor textSelected() const { return QColor(QStringLiteral("#ffffff")); }
-    QColor textAccent() const { return QColor(QStringLiteral("#38bdf8")); }
-    QColor textDanger() const { return QColor(QStringLiteral("#fca5a5")); }
+    QColor textPrimary() const { static const QColor c(QStringLiteral("#f3f4f6")); return c; }
+    QColor textSecondary() const { static const QColor c(QStringLiteral("#9ca3af")); return c; }
+    QColor textMuted() const { static const QColor c(QStringLiteral("#6b7280")); return c; }
+    QColor textSelected() const { static const QColor c(QStringLiteral("#ffffff")); return c; }
+    QColor textAccent() const { static const QColor c(QStringLiteral("#38bdf8")); return c; }
+    QColor textDanger() const { static const QColor c(QStringLiteral("#fca5a5")); return c; }
 
     // File Type Colors
-    QColor fileFolder() const { return QColor(QStringLiteral("#fbbf24")); }
-    QColor fileCode() const { return QColor(QStringLiteral("#38bdf8")); }
-    QColor fileImage() const { return QColor(QStringLiteral("#c084fc")); }
-    QColor fileArchive() const { return QColor(QStringLiteral("#f472b6")); }
-    QColor fileExec() const { return QColor(QStringLiteral("#4ade80")); }
-    QColor fileDoc() const { return QColor(QStringLiteral("#60a5fa")); }
-    QColor fileParent() const { return QColor(QStringLiteral("#e2e8f0")); }
-    QColor fileGeneric() const { return QColor(QStringLiteral("#9ca3af")); }
+    QColor fileFolder() const { static const QColor c(QStringLiteral("#fbbf24")); return c; }
+    QColor fileCode() const { static const QColor c(QStringLiteral("#38bdf8")); return c; }
+    QColor fileImage() const { static const QColor c(QStringLiteral("#c084fc")); return c; }
+    QColor fileArchive() const { static const QColor c(QStringLiteral("#f472b6")); return c; }
+    QColor fileExec() const { static const QColor c(QStringLiteral("#4ade80")); return c; }
+    QColor fileDoc() const { static const QColor c(QStringLiteral("#60a5fa")); return c; }
+    QColor fileParent() const { static const QColor c(QStringLiteral("#e2e8f0")); return c; }
+    QColor fileGeneric() const { static const QColor c(QStringLiteral("#9ca3af")); return c; }
 
     // Typography
     QString fontFamily() const { return QStringLiteral("Segoe UI, -apple-system, BlinkMacSystemFont, Roboto, sans-serif"); }

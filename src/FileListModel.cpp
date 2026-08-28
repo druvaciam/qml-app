@@ -9,6 +9,10 @@ FileListModel::FileListModel(QObject *parent)
 {
     connect(&m_watcher, &QFileSystemWatcher::directoryChanged,
             this, &FileListModel::onDirectoryChanged);
+
+    m_reloadTimer.setSingleShot(true);
+    m_reloadTimer.setInterval(200);
+    connect(&m_reloadTimer, &QTimer::timeout, this, &FileListModel::refresh);
 }
 
 int FileListModel::rowCount(const QModelIndex &parent) const
@@ -176,6 +180,7 @@ void FileListModel::setFilterPattern(const QString &pattern)
 
 void FileListModel::refresh()
 {
+    m_reloadTimer.stop();
     loadDirectory();
 }
 
@@ -421,7 +426,9 @@ QString FileListModel::selectedSizeFormatted() const
 void FileListModel::onDirectoryChanged(const QString &path)
 {
     Q_UNUSED(path)
-    refresh();
+    // Restart on every notification so a burst collapses into one reload once
+    // the directory has been quiet for the timer interval.
+    m_reloadTimer.start();
 }
 
 void FileListModel::loadDirectory()

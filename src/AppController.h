@@ -139,6 +139,12 @@ public:
 
   // --- Clipboard Integration (Ctrl+C / Ctrl+X / Ctrl+V) ---
   Q_INVOKABLE void copyToClipboard();
+private:
+  /// Shared body of copyToClipboard/cutToClipboard: they differ only by the
+  /// DropEffect value and the GNOME verb.
+  void putSelectionOnClipboard(bool cut);
+
+public:
   Q_INVOKABLE void cutToClipboard();
   Q_INVOKABLE void pasteFromClipboard();
   Q_INVOKABLE bool canPaste() const;

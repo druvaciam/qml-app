@@ -18,6 +18,7 @@
 #include <QDateTime>
 #include <QFileInfo>
 #include <QFileSystemWatcher>
+#include <QTimer>
 #include <QSet>
 #include <QtQml/qqmlregistration.h>
 
@@ -151,6 +152,10 @@ private:
     QString m_currentPath;
     QList<FileItem> m_items;
     QFileSystemWatcher m_watcher;
+    // A directory being written to fires directoryChanged once per file. Each
+    // reload is a full re-stat of every entry on the GUI thread, so coalesce
+    // a burst of changes into a single reload.
+    QTimer m_reloadTimer;
 
     int m_sortColumn = SortByName;
     bool m_sortAscending = true;

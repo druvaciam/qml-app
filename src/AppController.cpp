@@ -462,6 +462,10 @@ void AppController::refreshAll()
 {
     m_leftPanel->refresh();
     m_rightPanel->refresh();
+    // The full drive sweep belongs to an explicit refresh, not to every
+    // incidental list reload. See PanelController::refresh().
+    m_leftPanel->refreshDrives();
+    m_rightPanel->refreshDrives();
 }
 
 void AppController::openTerminalInActivePanel()
@@ -495,7 +499,10 @@ QStringList AppController::urlsToPaths(const QList<QUrl> &urls) const
 {
     QStringList paths;
     for (const QUrl &url : urls) {
-        QString local = url.isLocalFile() ? url.toLocalFile() : url.toString();
+        if (!url.isLocalFile()) {
+            continue; // remote URLs are not file paths and must not be treated as such
+        }
+        const QString local = url.toLocalFile();
         if (!local.isEmpty()) {
             paths.append(QDir::toNativeSeparators(local));
         }
@@ -503,70 +510,47 @@ QStringList AppController::urlsToPaths(const QList<QUrl> &urls) const
     return paths;
 }
 
-void AppController::copyToClipboard()
+void AppController::putSelectionOnClipboard(bool cut)
 {
-    QStringList targets = getActiveOrSelectedPaths();
+    const QStringList targets = getActiveOrSelectedPaths();
     if (targets.isEmpty()) {
         return;
     }
 
-    QClipboard *clipboard = QGuiApplication::clipboard();
-    QMimeData *mimeData = new QMimeData();
-
     QList<QUrl> urls;
+    urls.reserve(targets.size());
     for (const QString &path : targets) {
         urls.append(QUrl::fromLocalFile(path));
     }
+
+    QMimeData *mimeData = new QMimeData();
     mimeData->setUrls(urls);
 
-    // Windows Explorer DropEffect format (DROPEFFECT_COPY = 1)
+    // Windows Explorer DropEffect: DROPEFFECT_COPY = 1, DROPEFFECT_MOVE = 2
     QByteArray dropEffect(4, 0);
-    dropEffect[0] = 1;
+    dropEffect[0] = cut ? 2 : 1;
     mimeData->setData(QStringLiteral("Preferred DropEffect"), dropEffect);
 
     // GNOME/KDE format
-    QString gnomeData = QStringLiteral("copy\n");
+    QString gnomeData = cut ? QStringLiteral("cut\n") : QStringLiteral("copy\n");
     for (const QUrl &url : urls) {
         gnomeData += url.toString() + QLatin1Char('\n');
     }
     mimeData->setData(QStringLiteral("x-special/gnome-copied-files"), gnomeData.toUtf8());
 
-    clipboard->setMimeData(mimeData);
-    m_isCutOperation = false;
+    QGuiApplication::clipboard()->setMimeData(mimeData);
+    m_isCutOperation = cut;
     emit clipboardChanged();
+}
+
+void AppController::copyToClipboard()
+{
+    putSelectionOnClipboard(false);
 }
 
 void AppController::cutToClipboard()
 {
-    QStringList targets = getActiveOrSelectedPaths();
-    if (targets.isEmpty()) {
-        return;
-    }
-
-    QClipboard *clipboard = QGuiApplication::clipboard();
-    QMimeData *mimeData = new QMimeData();
-
-    QList<QUrl> urls;
-    for (const QString &path : targets) {
-        urls.append(QUrl::fromLocalFile(path));
-    }
-    mimeData->setUrls(urls);
-
-    // Windows Explorer DropEffect format (DROPEFFECT_MOVE = 2)
-    QByteArray dropEffect(4, 0);
-    dropEffect[0] = 2;
-    mimeData->setData(QStringLiteral("Preferred DropEffect"), dropEffect);
-
-    // GNOME/KDE format
-    QString gnomeData = QStringLiteral("cut\n");
-    for (const QUrl &url : urls) {
-        gnomeData += url.toString() + QLatin1Char('\n');
-    }
-    mimeData->setData(QStringLiteral("x-special/gnome-copied-files"), gnomeData.toUtf8());
-
-    clipboard->setMimeData(mimeData);
-    m_isCutOperation = true;
-    emit clipboardChanged();
+    putSelectionOnClipboard(true);
 }
 
 void AppController::pasteFromClipboard()

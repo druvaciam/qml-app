@@ -40,6 +40,9 @@ class FileOperationsService : public QObject
     Q_PROPERTY(int totalItems READ totalItems NOTIFY progressChanged)
     Q_PROPERTY(double progress READ progress NOTIFY progressChanged)
     Q_PROPERTY(QString statusMessage READ statusMessage NOTIFY statusMessageChanged)
+    // True while the operation is being driven by the OS shell, which shows its
+    // own progress dialog with a working Cancel. Our modal must stay hidden then.
+    Q_PROPERTY(bool nativeProgress READ nativeProgress NOTIFY nativeProgressChanged)
 
 public:
     explicit FileOperationsService(QObject *parent = nullptr);
@@ -53,6 +56,7 @@ public:
     int totalItems() const { return m_totalItems; }
     double progress() const { return m_progress; }
     QString statusMessage() const { return m_statusMessage; }
+    bool nativeProgress() const { return m_nativeProgress; }
 
     /**
      * @brief Asynchronously copy multiple files/directories to destinationDir.
@@ -101,6 +105,18 @@ public:
     static bool isSamePath(const QString &pathA, const QString &pathB);
 
     /**
+     * @brief True when destinationDir is a folder inside sourcePath.
+     * Copying or moving a directory into its own descendant would recurse forever.
+     */
+    static bool destinationInsideSource(const QString &sourcePath, const QString &destinationDir);
+
+    /**
+     * @brief True when name is a single file name, with no path separators and
+     * not "." or "..". Used to keep New Folder and Rename inside the panel.
+     */
+    static bool isPlainFileName(const QString &name);
+
+    /**
      * @brief Request cancellation of the currently active asynchronous operation.
      */
     Q_INVOKABLE void cancel();
@@ -110,6 +126,7 @@ signals:
     void operationTitleChanged(const QString &title);
     void progressChanged();
     void statusMessageChanged(const QString &message);
+    void nativeProgressChanged(bool native);
     void operationCompleted(bool success, const QString &message);
     void operationError(const QString &error);
 
@@ -117,12 +134,20 @@ private:
     void setBusy(bool busy);
     void setOperationTitle(const QString &title);
     void setStatusMessage(const QString &msg);
+    void setNativeProgress(bool native);
+    bool runPortableCopy(const QStringList &sourcePaths, const QString &destinationDir, QString &error);
+    bool checkNotIntoOwnSubfolder(const QStringList &sourcePaths, const QString &destinationDir, const QString &verb);
     void updateProgress(const QString &fileName, int processed, int total);
     void startOperation(const QString &title, const QString &status, std::function<bool()> work);
 
-    bool copyRecursively(const QString &srcPath, const QString &dstPath);
-    bool moveRecursively(const QString &srcPath, const QString &dstPath);
-    bool deleteRecursively(const QString &path);
+    // processed/total/error are worker-thread locals passed down the recursion.
+    // They must not be members: startOperation and the queued progress update
+    // both write the members from the GUI thread while the worker runs.
+    bool copyRecursively(const QString &srcPath, const QString &dstPath,
+                         int &processed, int total, QString &error);
+    bool moveRecursively(const QString &srcPath, const QString &dstPath,
+                         int &processed, int total, QString &error);
+    bool deleteRecursively(const QString &path, int &processed, int total, QString &error);
     int countTotalItems(const QStringList &paths);
 
     bool m_isBusy = false;
@@ -133,6 +158,7 @@ private:
     double m_progress = 0.0;
     QString m_statusMessage;
     QString m_lastError;
+    bool m_nativeProgress = false;
 
     QAtomicInt m_cancelRequested{0};
     QFutureWatcher<bool> m_futureWatcher;

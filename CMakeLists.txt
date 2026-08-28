@@ -65,7 +65,6 @@ qt_add_qml_module(appQmlCommander
         qml/components/OperationProgressModal.qml
         qml/components/FilePreviewDialog.qml
         qml/components/NewFolderDialog.qml
-        qml/components/RenameDialog.qml
         qml/components/ConfirmDeleteDialog.qml
         qml/components/CopyMoveDialog.qml
     RESOURCES

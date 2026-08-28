@@ -7,7 +7,10 @@ Rectangle {
     id: root
     required property FileOperationsService fileOps
 
-    visible: fileOps.isBusy
+    // On Windows, copy and move run through the shell, which shows its own
+    // progress dialog with a Cancel that actually works. Two dialogs at once
+    // would be wrong, and ours could not report progress or cancel anything.
+    visible: fileOps.isBusy && !fileOps.nativeProgress
     anchors.fill: parent
     color: "#a0000000" // Dim backdrop
     z: 100

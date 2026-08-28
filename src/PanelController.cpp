@@ -147,7 +147,10 @@ void PanelController::refresh()
     if (m_model) {
         m_model->refresh();
     }
-    refreshDrives();
+    // Only the current drive's free space, not a full QStorageInfo::mountedVolumes()
+    // sweep. That sweep can block on a disconnected network drive, and refresh()
+    // runs after every file operation, rename and context menu.
+    updateCurrentDriveInfo();
 }
 
 void PanelController::refreshDrives()
