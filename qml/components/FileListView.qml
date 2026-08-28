@@ -601,6 +601,7 @@ Item {
                 property real pressRootY: 0
                 property bool isDragActive: false
                 property bool pressedOnAlreadySelected: false
+                property bool pressedOnCurrent: false
                 property int rightPressIndex: -1
                 property bool isRightDragging: false
 
@@ -614,7 +615,8 @@ Item {
                     }
                 }
 
-                // Delayed timer for second left click on already selected item (avoids double click)
+                // Delayed timer for a second left click on the row the cursor is
+                // already on (the delay lets a real double click win instead)
                 Timer {
                     id: renameClickTimer
                     interval: 450
@@ -622,7 +624,6 @@ Item {
                     onTriggered: {
                         if (rootListView.editingIndex === -1 &&
                             listView.currentIndex === index &&
-                            isSelected &&
                             !isParent &&
                             rootListView.controller.isActive) {
                             rootListView.editingIndex = index
@@ -645,6 +646,7 @@ Item {
                     isDragActive = false
 
                     let prevIndex = listView.currentIndex
+                    pressedOnCurrent = (prevIndex === index)
                     listView.currentIndex = index
                     rootListView.controller.currentIndex = index
                     rootListView.controller.activate()
@@ -669,12 +671,10 @@ Item {
                                 rootListView.controller.model.toggleSelection(index)
                             }
                         } else if (!isParent) {
+                            // A plain left click only moves the cursor, the same as Up/Down.
+                            // Check marks are changed by the checkbox, Space, right click,
+                            // or Ctrl / Shift click - never by a plain click.
                             rootListView.selectionAnchorIndex = index
-                            if (!isSelected) {
-                                renameClickTimer.stop()
-                                rootListView.controller.model.selectOnly(index)
-                            }
-                            // If isSelected is true, keep multi-selection intact for dragging!
                         }
                     }
                 }
@@ -751,14 +751,10 @@ Item {
                                 rootListView.controller.model.toggleSelection(index)
                             }
                         } else if (!(mouse.modifiers & Qt.ShiftModifier) && !isParent) {
-                            if (pressedOnAlreadySelected) {
-                                if (rootListView.controller.selectedItemsCount > 1) {
-                                    // Released without dragging on a multi-selection: select only this item
-                                    rootListView.controller.model.selectOnly(index)
-                                } else {
-                                    // Second click on uniquely selected item: schedule rename after double-click window
-                                    renameClickTimer.start()
-                                }
+                            if (pressedOnCurrent) {
+                                // Clicked the row the cursor was already on: start an
+                                // inline rename once the double-click window has passed.
+                                renameClickTimer.start()
                             }
                         }
                     }
