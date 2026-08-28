@@ -8,6 +8,15 @@
 #include <QMimeDatabase>
 #include <QProcess>
 #include <QUrl>
+#include <QStringConverter>
+#include <QStringDecoder>
+
+#ifdef Q_OS_WIN
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
 
 FilePreviewService::FilePreviewService(QObject *parent)
     : QObject(parent)
@@ -60,24 +69,108 @@ QVariantMap FilePreviewService::loadPreview(const QString &filePath, int maxByte
     }
 
     // Attempt text reading
+    QByteArray data;
+    bool opened = false;
+    bool isTruncated = false;
+    QString openError;
+
+#ifdef Q_OS_WIN
     QFile file(filePath);
-    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+    if (file.open(QIODevice::ReadOnly)) {
+        data = file.read(maxBytes);
+        isTruncated = (file.size() > maxBytes);
+        file.close();
+        opened = true;
+    } else {
+        openError = file.errorString();
+        // Fallback: Windows CreateFile with full sharing flags (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE)
+        HANDLE hFile = CreateFileW(
+            reinterpret_cast<LPCWSTR>(filePath.utf16()),
+            GENERIC_READ,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            nullptr,
+            OPEN_EXISTING,
+            FILE_ATTRIBUTE_NORMAL,
+            nullptr
+        );
+        if (hFile != INVALID_HANDLE_VALUE) {
+            LARGE_INTEGER fileSize;
+            if (GetFileSizeEx(hFile, &fileSize)) {
+                DWORD toRead = static_cast<DWORD>(std::min<qint64>(maxBytes, fileSize.QuadPart));
+                data.resize(toRead);
+                DWORD bytesRead = 0;
+                if (ReadFile(hFile, data.data(), toRead, &bytesRead, nullptr)) {
+                    data.resize(bytesRead);
+                    isTruncated = (fileSize.QuadPart > maxBytes);
+                    opened = true;
+                }
+            }
+            CloseHandle(hFile);
+        } else {
+            DWORD winErr = GetLastError();
+            if (winErr == ERROR_ACCESS_DENIED) {
+                openError = QStringLiteral("Access is denied (system protected or administrator permissions required).");
+            } else if (winErr == ERROR_SHARING_VIOLATION) {
+                openError = QStringLiteral("Sharing violation (file is in exclusive use by another process).");
+            }
+        }
+    }
+#else
+    QFile file(filePath);
+    if (file.open(QIODevice::ReadOnly)) {
+        data = file.read(maxBytes);
+        isTruncated = (file.size() > maxBytes);
+        file.close();
+        opened = true;
+    } else {
+        openError = file.errorString();
+    }
+#endif
+
+    if (!opened) {
         result["isText"] = false;
-        result["error"] = QStringLiteral("Cannot open file for reading.");
+        result["isImage"] = false;
+        result["error"] = openError.isEmpty() ? QStringLiteral("Cannot open file for reading.") : openError;
         return result;
     }
 
-    QByteArray data = file.read(maxBytes);
-    bool isTruncated = (file.size() > maxBytes);
-    file.close();
-
-    // Check if binary characters are present
+    // Check for UTF-16 BOMs
+    QString textContent;
     bool isBinary = false;
-    for (int i = 0; i < std::min<int>(data.size(), 1024); ++i) {
-        char c = data.at(i);
-        if (c == 0 || (static_cast<unsigned char>(c) < 32 && c != '\t' && c != '\r' && c != '\n')) {
+
+    if (data.size() >= 2) {
+        quint8 b0 = static_cast<quint8>(data.at(0));
+        quint8 b1 = static_cast<quint8>(data.at(1));
+        if (b0 == 0xff && b1 == 0xfe) {
+            // UTF-16 LE
+            textContent = QString::fromUtf16(reinterpret_cast<const char16_t*>(data.constData() + 2), (data.size() - 2) / 2);
+        } else if (b0 == 0xfe && b1 == 0xff) {
+            // UTF-16 BE
+            QStringDecoder decoder(QStringDecoder::Utf16BE);
+            textContent = decoder(data.mid(2));
+        }
+    }
+
+    if (textContent.isEmpty() && !data.isEmpty()) {
+        // Check for binary bytes (null bytes)
+        int checkLen = std::min<int>(data.size(), 1024);
+        int nullCount = 0;
+        for (int i = 0; i < checkLen; ++i) {
+            char c = data.at(i);
+            if (c == 0) {
+                nullCount++;
+            }
+        }
+
+        if (nullCount > 0) {
             isBinary = true;
-            break;
+        } else {
+            // Decode as UTF-8 with fallback to Latin-1
+            auto decoder = QStringDecoder(QStringDecoder::Utf8, QStringDecoder::Flag::Stateless);
+            textContent = decoder(data);
+            if (decoder.hasError()) {
+                textContent = QString::fromLatin1(data);
+            }
         }
     }
 
@@ -88,7 +181,6 @@ QVariantMap FilePreviewService::loadPreview(const QString &filePath, int maxByte
     } else {
         result["isText"] = true;
         result["isBinary"] = false;
-        QString textContent = QString::fromUtf8(data);
         result["content"] = textContent;
         result["isTruncated"] = isTruncated;
         result["lineCount"] = textContent.count(QLatin1Char('\n')) + 1;
@@ -112,6 +204,16 @@ bool FilePreviewService::saveTextFile(const QString &filePath, const QString &co
 
 bool FilePreviewService::openInDefaultApp(const QString &filePath)
 {
+#ifndef Q_OS_WIN
+    QFileInfo fi(filePath);
+    QString ext = fi.suffix().toLower();
+    if (ext == "txt" || ext == "log" || ext == "ini" || ext == "conf" || ext == "json" ||
+        ext == "cpp" || ext == "h" || ext == "qml" || ext == "md" || ext == "xml" || ext == "sh") {
+        if (QProcess::startDetached(QStringLiteral("mousepad"), {filePath})) {
+            return true;
+        }
+    }
+#endif
     return QDesktopServices::openUrl(QUrl::fromLocalFile(filePath));
 }
 
@@ -127,6 +229,9 @@ bool FilePreviewService::openInTerminal(const QString &dirPath)
 #elif defined(Q_OS_MAC)
     return QProcess::startDetached(QStringLiteral("open"), {QStringLiteral("-a"), QStringLiteral("Terminal"), path});
 #else
+    if (QProcess::startDetached(QStringLiteral("xterm"), {QStringLiteral("-e"), QString("cd '%1' && exec bash").arg(path)})) {
+        return true;
+    }
     return QProcess::startDetached(QStringLiteral("xdg-open"), {path});
 #endif
 }

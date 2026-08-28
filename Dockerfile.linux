@@ -15,10 +15,18 @@ RUN dnf install -y --setopt=install_weak_deps=False \
     mesa-libGL-devel \
     mesa-dri-drivers \
     xcb-util-cursor \
+    qt6-qtwayland \
     tar \
     gzip \
     xorg-x11-server-Xvfb \
     which \
+    xdg-utils \
+    mousepad \
+    xterm \
+    dejavu-sans-fonts \
+    google-noto-color-emoji-fonts \
+    google-noto-sans-fonts \
+    google-noto-sans-symbols-fonts \
     && dnf clean all
 
 WORKDIR /src
@@ -49,5 +57,9 @@ RUN echo "=== Test 1: Testing headless QML initialization (QT_QPA_PLATFORM=offsc
 RUN echo "=== Test 2: Testing X11 virtual display execution with xvfb-run ===" \
     && (LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a -s "-screen 0 1280x800x24" timeout 3s ./appQmlCommander || [ $? -eq 124 ]) \
     && echo "SUCCESS: Full X11 window lifecycle passed without error!"
+
+ENV LC_ALL=C.UTF-8
+ENV XDG_RUNTIME_DIR=/mnt/wslg/runtime-dir
+ENV WAYLAND_DISPLAY=wayland-0
 
 ENTRYPOINT ["/app/dist-linux/bin/appQmlCommander"]

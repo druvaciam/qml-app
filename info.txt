@@ -201,13 +201,16 @@ Step 4: Launch the Linux GUI Window on Windows via WSLg
 Open your WSL terminal (`wsl`) and run:
   docker run --rm -it \
     -e DISPLAY=$DISPLAY \
-    -e WAYLAND_DISPLAY=$WAYLAND_DISPLAY \
-    -e XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR \
     -v /tmp/.X11-unix:/tmp/.X11-unix \
     -v /mnt/wslg:/mnt/wslg \
+    -v ~/.config/QmlCommander:/root/.config/QtCommanderTeam \
     qmlcommander-linux:latest
 
-The native Linux Qt6 QmlCommander window will pop up right on your Windows desktop!
+Note: 
+- `-v /mnt/wslg:/mnt/wslg` gives native Wayland GUI acceleration.
+- `-v ~/.config/QmlCommander:/root/.config/QtCommanderTeam` mounts a folder from 
+  your WSL home directory so window size, position, and panel session paths are preserved 
+  even when the container stops (`--rm`).
 
 
 ================================================================================

@@ -82,6 +82,7 @@ AppController::AppController(QObject *parent)
 
     // Load and restore last session paths and settings
     loadSession();
+    saveSession();
 
     connect(m_leftPanel, &PanelController::fileActivated, this, &AppController::requestPreviewFile);
     connect(m_rightPanel, &PanelController::fileActivated, this, &AppController::requestPreviewFile);
@@ -190,6 +191,7 @@ void AppController::saveSession()
     if (m_rightPanel && m_rightPanel->model()) {
         settings.setValue(QStringLiteral("session/rightShowHidden"), m_rightPanel->model()->showHidden());
     }
+    settings.sync();
 }
 
 void AppController::restoreWindowGeometry(QQuickWindow *window)
@@ -248,6 +250,8 @@ void AppController::restoreWindowGeometry(QQuickWindow *window)
     }
 #endif
 
+    window->setWidth(w);
+    window->setHeight(h);
     window->resize(w, h);
     if (validPos) {
         window->setPosition(x, y);
@@ -285,6 +289,7 @@ void AppController::saveWindowGeometry(QQuickWindow *window)
             settings.setValue(QStringLiteral("window/x"), normalX);
             settings.setValue(QStringLiteral("window/y"), normalY);
             settings.setValue(QStringLiteral("window/isMaximized"), isMax);
+            settings.sync();
             return;
         }
     }
@@ -299,6 +304,7 @@ void AppController::saveWindowGeometry(QQuickWindow *window)
         settings.setValue(QStringLiteral("window/x"), window->x());
         settings.setValue(QStringLiteral("window/y"), window->y());
     }
+    settings.sync();
 }
 
 void AppController::setupTrayIcon(QQuickWindow *window)

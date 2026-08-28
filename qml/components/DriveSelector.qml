@@ -30,9 +30,20 @@ Rectangle {
                     required property driveInfo modelData
                     
                     readonly property bool isCurrentDrive: {
-                        let path = root.controller.currentPath.toUpperCase()
-                        let dPath = modelData.rootPath.toUpperCase()
-                        return path.startsWith(dPath)
+                        let path = root.controller.currentPath
+                        let dPath = modelData.rootPath
+                        if (dPath === "/") {
+                            for (let i = 0; i < root.controller.driveList.length; ++i) {
+                                let other = root.controller.driveList[i].rootPath
+                                if (other !== "/" && path.startsWith(other)) {
+                                    return false
+                                }
+                            }
+                            return true
+                        }
+                        return Qt.platform.os === "windows"
+                            ? path.toUpperCase().startsWith(dPath.toUpperCase())
+                            : path.startsWith(dPath)
                     }
 
                     width: driveBtnContent.width + 16
@@ -48,7 +59,7 @@ Rectangle {
                         spacing: 4
 
                         Text {
-                            text: "💾 " + (modelData.rootPath.length > 3 ? modelData.rootPath.substring(0, 3) : modelData.rootPath)
+                            text: "💾 " + modelData.displayName
                             font.family: Theme.fontFamily
                             font.pixelSize: Theme.fontSizeSmall
                             font.bold: isCurrentDrive

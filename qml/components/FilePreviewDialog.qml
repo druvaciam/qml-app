@@ -67,6 +67,7 @@ Rectangle {
                     font.pixelSize: Theme.fontSizeTitle
                     font.bold: true
                     color: Theme.textPrimary
+                    Layout.alignment: Qt.AlignVCenter
                 }
 
                 Text {
@@ -75,22 +76,32 @@ Rectangle {
                     font.pixelSize: Theme.fontSizeMedium
                     color: Theme.accent
                     Layout.fillWidth: true
+                    Layout.minimumWidth: 80
+                    Layout.alignment: Qt.AlignVCenter
                     elide: Text.ElideMiddle
                 }
 
                 // File metadata badge
                 Rectangle {
-                    height: 24
-                    width: metaText.width + 12
+                    Layout.preferredHeight: 24
+                    Layout.preferredWidth: metaText.implicitWidth + 16
+                    Layout.alignment: Qt.AlignVCenter
                     radius: Theme.radiusSmall
                     color: Theme.bgHeader
                     border.color: Theme.borderSubtle
                     border.width: 1
+                    visible: metaText.text.length > 0
+                    clip: true
 
                     Text {
                         id: metaText
                         anchors.centerIn: parent
-                        text: (root.fileData.formattedSize || "") + " • " + (root.fileData.mimeType || "")
+                        text: {
+                            let parts = []
+                            if (root.fileData.formattedSize) parts.push(root.fileData.formattedSize)
+                            if (root.fileData.mimeType) parts.push(root.fileData.mimeType)
+                            return parts.join(" • ")
+                        }
                         font.family: Theme.fontFamily
                         font.pixelSize: 11
                         color: Theme.textSecondary
@@ -99,8 +110,9 @@ Rectangle {
 
                 // Open in default app
                 Rectangle {
-                    width: 28
-                    height: 28
+                    Layout.preferredWidth: 28
+                    Layout.preferredHeight: 28
+                    Layout.alignment: Qt.AlignVCenter
                     radius: Theme.radiusSmall
                     color: extMouse.containsMouse ? Theme.bgHover : Theme.bgHeader
                     border.color: Theme.borderSubtle
@@ -126,8 +138,9 @@ Rectangle {
 
                 // Close button
                 Rectangle {
-                    width: 28
-                    height: 28
+                    Layout.preferredWidth: 28
+                    Layout.preferredHeight: 28
+                    Layout.alignment: Qt.AlignVCenter
                     radius: Theme.radiusSmall
                     color: closeMouse.containsMouse ? Theme.dangerHover : Theme.bgHeader
                     border.color: Theme.borderSubtle
@@ -146,6 +159,8 @@ Rectangle {
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
                         onClicked: root.close()
+                        ToolTip.visible: containsMouse
+                        ToolTip.text: "Close (Esc)"
                     }
                 }
             }
@@ -215,21 +230,33 @@ Rectangle {
                 // 3. Binary / Other File View
                 ColumnLayout {
                     anchors.centerIn: parent
-                    visible: !root.fileData.isText && !root.fileData.isImage
+                    visible: Boolean(!root.fileData?.isText && !root.fileData?.isImage)
                     spacing: 12
 
                     Text {
-                        text: "📦"
+                        text: root.fileData.error ? "🔒" : "📦"
                         font.pixelSize: 48
                         Layout.alignment: Qt.AlignHCenter
                     }
 
                     Text {
-                        text: root.fileData.error || "Binary or unsupported preview format"
+                        text: root.fileData.error ? "Cannot Read File" : "Binary File"
                         font.family: Theme.fontFamily
-                        font.pixelSize: Theme.fontSizeMedium
+                        font.pixelSize: Theme.fontSizeLarge
+                        font.bold: true
+                        color: root.fileData.error ? Theme.textDanger : Theme.textPrimary
+                        Layout.alignment: Qt.AlignHCenter
+                    }
+
+                    Text {
+                        text: root.fileData.error || "Binary or unsupported preview format."
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.fontSizeSmall
                         color: Theme.textSecondary
                         Layout.alignment: Qt.AlignHCenter
+                        horizontalAlignment: Text.AlignHCenter
+                        Layout.maximumWidth: 420
+                        wrapMode: Text.Wrap
                     }
 
                     Rectangle {
@@ -278,10 +305,11 @@ Rectangle {
 
                 // Save button if edit mode
                 Rectangle {
-                    width: 100
-                    height: 30
+                    Layout.preferredWidth: 100
+                    Layout.preferredHeight: 30
+                    Layout.alignment: Qt.AlignVCenter
                     radius: Theme.radiusSmall
-                    visible: root.isEditMode && root.fileData.isText
+                    visible: Boolean(root.isEditMode && root.fileData?.isText)
                     color: saveMouse.containsMouse ? Theme.accentHover : Theme.accent
 
                     Text {
@@ -307,8 +335,9 @@ Rectangle {
 
                 // Close button
                 Rectangle {
-                    width: 80
-                    height: 30
+                    Layout.preferredWidth: 80
+                    Layout.preferredHeight: 30
+                    Layout.alignment: Qt.AlignVCenter
                     radius: Theme.radiusSmall
                     color: dlgCloseMouse.containsMouse ? Theme.bgHover : Theme.bgHeader
                     border.color: Theme.borderSubtle
