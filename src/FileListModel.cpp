@@ -181,6 +181,7 @@ void FileListModel::setFilterPattern(const QString &pattern)
 void FileListModel::refresh()
 {
     m_reloadTimer.stop();
+    m_reloadPending = false;
     loadDirectory();
 }
 
@@ -408,6 +409,18 @@ QVariantMap FileListModel::get(int index) const
     return map;
 }
 
+QStringList FileListModel::fileNames() const
+{
+    QStringList names;
+    names.reserve(m_items.size());
+    for (const auto &item : m_items) {
+        if (!item.isParent) {
+            names.append(item.name);
+        }
+    }
+    return names;
+}
+
 int FileListModel::findItemIndex(const QString &fileName) const
 {
     for (int i = 0; i < static_cast<int>(m_items.size()); ++i) {
@@ -426,9 +439,35 @@ QString FileListModel::selectedSizeFormatted() const
 void FileListModel::onDirectoryChanged(const QString &path)
 {
     Q_UNUSED(path)
+    if (m_reloadSuspended) {
+        m_reloadPending = true;
+        return;
+    }
     // Restart on every notification so a burst collapses into one reload once
     // the directory has been quiet for the timer interval.
     m_reloadTimer.start();
+}
+
+void FileListModel::setReloadSuspended(bool suspended)
+{
+    if (m_reloadSuspended == suspended) {
+        return;
+    }
+    m_reloadSuspended = suspended;
+
+    if (suspended) {
+        // A reload may already be queued from the change that prompted this.
+        if (m_reloadTimer.isActive()) {
+            m_reloadTimer.stop();
+            m_reloadPending = true;
+        }
+        return;
+    }
+
+    if (m_reloadPending) {
+        m_reloadPending = false;
+        m_reloadTimer.start();
+    }
 }
 
 void FileListModel::loadDirectory()

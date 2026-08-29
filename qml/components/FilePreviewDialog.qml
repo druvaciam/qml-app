@@ -12,11 +12,16 @@ Rectangle {
     property bool isOpen: false
     property bool isEditMode: false
     property string saveError: ""
+    property string saveNotice: ""
 
     visible: isOpen
     anchors.fill: parent
     color: "#b0000000"
     z: 110
+    // Escape is handled by Keys.onEscapePressed below, which only fires while
+    // this item holds focus. Without this it depends on whatever happened to
+    // have focus when the dialog opened.
+    focus: isOpen
 
     signal closed()
 
@@ -24,12 +29,64 @@ Rectangle {
         filePath = path
         isEditMode = editMode
         saveError = ""
+        saveNotice = ""
         fileData = previewService.loadPreview(path)
         if (fileData.isText) {
             editorText.text = fileData.content || ""
         }
         isOpen = true
         root.forceActiveFocus()
+        root.focus = true
+
+        // In edit mode, put the caret in the text so typing works straight away.
+        // Deferred so the editor exists and is laid out first. Escape still
+        // closes the dialog: TextArea ignores it, so it propagates up to
+        // Keys.onEscapePressed on the root.
+        if (editMode && !root.fileData?.isTruncated && root.fileData?.isText) {
+            Qt.callLater(() => {
+                editorText.forceActiveFocus()
+                editorText.cursorPosition = 0
+            })
+        }
+    }
+
+    /// True while the file can actually be written: edit mode, real text, and
+    /// not one of the large files that are loaded only in part.
+    readonly property bool canSave: Boolean(isOpen && isEditMode
+                                            && fileData?.isText
+                                            && !fileData?.isTruncated)
+
+    /// Save the editor's contents. closeAfter is true for the Save button and
+    /// false for Ctrl+S, which keeps the file open so editing can continue.
+    function save(closeAfter) {
+        if (!canSave) return false
+        if (!previewService.saveTextFile(filePath, editorText.text)) {
+            saveNotice = ""
+            saveError = "Could not save — the file is read-only or in use. Your changes are still here."
+            return false
+        }
+        saveError = ""
+        if (closeAfter) {
+            close()
+        } else {
+            saveNotice = "Saved"
+            saveNoticeTimer.restart()
+            editorText.forceActiveFocus()
+        }
+        return true
+    }
+
+    Timer {
+        id: saveNoticeTimer
+        interval: 2000
+        repeat: false
+        onTriggered: root.saveNotice = ""
+    }
+
+    Shortcut {
+        sequences: [StandardKey.Save]
+        enabled: root.canSave
+        onActivated: root.save(false)
     }
 
     function close() {
@@ -324,6 +381,16 @@ Rectangle {
                     elide: Text.ElideRight
                 }
 
+                Text {
+                    visible: root.saveNotice.length > 0
+                    text: "✓ " + root.saveNotice
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.fontSizeSmall
+                    font.bold: true
+                    color: Theme.success
+                    elide: Text.ElideRight
+                }
+
                 // Save button if edit mode
                 Rectangle {
                     Layout.preferredWidth: 100
@@ -335,7 +402,7 @@ Rectangle {
 
                     Text {
                         anchors.centerIn: parent
-                        text: "💾 Save"
+                        text: "💾 Save (Ctrl+S)"
                         font.family: Theme.fontFamily
                         font.pixelSize: Theme.fontSizeSmall
                         font.bold: true
@@ -347,13 +414,7 @@ Rectangle {
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: {
-                            if (root.previewService.saveTextFile(root.filePath, editorText.text)) {
-                                root.close()
-                            } else {
-                                root.saveError = "Could not save — the file is read-only or in use. Your changes are still here."
-                            }
-                        }
+                        onClicked: root.save(true)
                     }
                 }
 
@@ -387,5 +448,5 @@ Rectangle {
         }
     }
 
-    Keys.onEscapePressed: root.close()
+    Keys.onEscapePressed: (event) => { root.close(); event.accepted = true }
 }

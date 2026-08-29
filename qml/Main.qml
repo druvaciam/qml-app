@@ -544,7 +544,10 @@ ApplicationWindow {
             onRequestEdit: executeEdit()
             onRequestCopy: executeCopy()
             onRequestMove: executeMove()
-            onRequestNewFolder: newFolderDialog.open()
+            onRequestNewFolder: {
+                cancelPendingRename()
+                newFolderDialog.open()
+            }
             onRequestDelete: executeDelete(false)
             onRequestSwap: appCtrl.swapPanes()
             onRequestTerminal: appCtrl.openTerminalInActivePanel()
@@ -553,7 +556,16 @@ ApplicationWindow {
     }
 
     // Helper functions for action dispatch
+    /// Drop any rename that is open or merely armed, in both panes. Called
+    /// before opening a dialog so the editor cannot surface behind it and take
+    /// the focus that Escape depends on.
+    function cancelPendingRename() {
+        leftPanel.fileListView.endInlineRename()
+        rightPanel.fileListView.endInlineRename()
+    }
+
     function executeView() {
+        cancelPendingRename()
         let targets = appCtrl.getActiveOrSelectedPaths()
         if (targets.length > 0) {
             previewDialog.open(targets[0], false)
@@ -561,6 +573,7 @@ ApplicationWindow {
     }
 
     function executeEdit() {
+        cancelPendingRename()
         let targets = appCtrl.getActiveOrSelectedPaths()
         if (targets.length > 0) {
             previewDialog.open(targets[0], true)
@@ -568,6 +581,7 @@ ApplicationWindow {
     }
 
     function executeCopy() {
+        cancelPendingRename()
         let targets = appCtrl.getActiveOrSelectedPaths()
         if (targets.length > 0) {
             let defaultDest = (appCtrl.targetPanel && appCtrl.targetPanel.currentPath) ? appCtrl.targetPanel.currentPath : ""
@@ -584,6 +598,7 @@ ApplicationWindow {
     }
 
     function executeMove() {
+        cancelPendingRename()
         let targets = appCtrl.getActiveOrSelectedPaths()
         if (targets.length > 0) {
             let defaultDest = (appCtrl.targetPanel && appCtrl.targetPanel.currentPath) ? appCtrl.targetPanel.currentPath : ""
@@ -602,6 +617,7 @@ ApplicationWindow {
     }
 
     function executeDelete(permanent = false) {
+        cancelPendingRename()
         let targets = appCtrl.getActiveOrSelectedPaths()
         if (targets.length > 0) {
             confirmDeleteDialog.open(targets, permanent)
@@ -797,7 +813,10 @@ ApplicationWindow {
 
     Shortcut {
         sequence: "F7"
-        onActivated: newFolderDialog.open()
+        onActivated: {
+            cancelPendingRename()
+            newFolderDialog.open()
+        }
     }
 
     Shortcut {

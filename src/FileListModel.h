@@ -112,6 +112,16 @@ public:
 
     // QML Invokables for interaction
     Q_INVOKABLE void refresh();
+
+    /**
+     * @brief Hold back file-watcher reloads (not explicit ones).
+     * A reload resets the model, which destroys and rebuilds every delegate. If
+     * that happens while a row is being renamed, the editor is torn down under
+     * the user's fingers. Suspend for the duration of the rename; any change
+     * seen meanwhile is applied as soon as it resumes.
+     */
+    Q_INVOKABLE void setReloadSuspended(bool suspended);
+    bool reloadSuspended() const { return m_reloadSuspended; }
     Q_INVOKABLE void toggleSort(int column);
     Q_INVOKABLE void toggleSelection(int index);
     Q_INVOKABLE void setRowSelected(int index, bool selected);
@@ -127,6 +137,8 @@ public:
     Q_INVOKABLE QString getSelectedSummary() const;
     Q_INVOKABLE QVariantMap get(int index) const;
     Q_INVOKABLE int findItemIndex(const QString &fileName) const;
+    /// Names of every row except "..", used to spot items created behind our back.
+    QStringList fileNames() const;
 
 signals:
     void currentPathChanged(const QString &path);
@@ -156,6 +168,8 @@ private:
     // reload is a full re-stat of every entry on the GUI thread, so coalesce
     // a burst of changes into a single reload.
     QTimer m_reloadTimer;
+    bool m_reloadSuspended = false;
+    bool m_reloadPending = false;
 
     int m_sortColumn = SortByName;
     bool m_sortAscending = true;

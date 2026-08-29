@@ -153,9 +153,13 @@ signals:
     void isActiveChanged(bool active);
     void filterTextChanged(const QString &filter);
     void fileActivated(const QString &filePath);
+    /// A shell command created exactly one new item; the view should put it
+    /// into inline rename, the way Explorer does after New > Text Document.
+    void inlineRenameRequested(int index);
 
 private:
     void pushHistory(const QString &path);
+    void trySelectNewItem(const QStringList &namesBefore, int attemptsLeft);
     void updateCurrentDriveInfo();
 
     FileListModel *m_model = nullptr;

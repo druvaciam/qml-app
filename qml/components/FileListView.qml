@@ -16,6 +16,13 @@ Item {
 
     readonly property bool containsDrag: listDropArea.containsDrag
     property int editingIndex: -1
+    // The row being renamed is tracked by name as well as index. A background
+    // reload renumbers rows, and creating a file wakes the watcher, so without
+    // this the rename box would disappear a moment after opening.
+    property string editingName: ""
+    // What the user has typed so far. Held here rather than in the editor so it
+    // survives if the row is rebuilt mid-rename by an explicit refresh.
+    property string editingText: ""
     property int dragHoverIndex: -1
     property int selectionAnchorIndex: -1
 
@@ -136,11 +143,7 @@ Item {
             if (rootListView.editingIndex !== -1) return
             if (targetIndex < 0 || listView.currentIndex !== targetIndex) return
             if (!rootListView.controller.isActive) return
-            let it = rootListView.controller.model.get(targetIndex)
-            if (it && !it.isParent) {
-                rootListView.editingIndex = targetIndex
-                listView.positionViewAtIndex(targetIndex, ListView.Contain)
-            }
+            rootListView.beginInlineRename(targetIndex)
         }
     }
 
@@ -165,15 +168,37 @@ Item {
     }
 
     function startInlineRename() {
-        let idx = listView.currentIndex
-        if (idx >= 0 && idx < listView.count) {
-            let map = rootListView.controller.model.get(idx)
-            if (map && map.filePath && !map.isParent) {
-                renameClickTimer.stop()
-                editingIndex = idx
-                listView.positionViewAtIndex(idx, ListView.Contain)
-            }
-        }
+        beginInlineRename(listView.currentIndex)
+    }
+
+    function beginInlineRename(idx) {
+        if (idx < 0 || idx >= listView.count) return
+        let map = rootListView.controller.model.get(idx)
+        if (!map || !map.filePath || map.isParent) return
+        renameClickTimer.stop()
+        // Stop watcher reloads from pulling the editor apart while it is open.
+        rootListView.controller.model.setReloadSuspended(true)
+        rootListView.editingName = map.fileName
+        rootListView.editingText = ""
+        rootListView.editingIndex = idx
+        listView.currentIndex = idx
+        rootListView.controller.currentIndex = idx
+        // A reload may already have queued a restoreViewState(); make it restore
+        // to this row rather than the one that was current a moment ago.
+        rootListView.savedCurrentItemName = map.fileName
+        listView.positionViewAtIndex(idx, ListView.Contain)
+    }
+
+    function endInlineRename() {
+        // Also drop a rename that is merely pending: a click arms a 450 ms
+        // timer, and anything opened in the meantime would find the editor
+        // appearing on top of it a moment later.
+        renameClickTimer.stop()
+        rootListView.editingIndex = -1
+        rootListView.editingName = ""
+        rootListView.editingText = ""
+        // Apply anything the folder did while we were holding reloads back.
+        rootListView.controller.model.setReloadSuspended(false)
     }
 
     // Header with column sorts
@@ -387,7 +412,7 @@ Item {
         z: 0
 
         onPressed: (mouse) => {
-            rootListView.editingIndex = -1
+            rootListView.endInlineRename()
             rootListView.controller.activate()
             listView.forceActiveFocus()
             if (mouse.button === Qt.RightButton) {
@@ -509,7 +534,7 @@ Item {
                 preventStealing: true
 
                 onPressed: (mouse) => {
-                    rootListView.editingIndex = -1
+                    rootListView.endInlineRename()
                     rootListView.controller.activate()
                     listView.forceActiveFocus()
                     if (mouse.button === Qt.RightButton) {
@@ -540,7 +565,7 @@ Item {
 
             onPressed: (mouse) => {
                 // Clicking free space with the left button cancels an inline rename
-                rootListView.editingIndex = -1
+                rootListView.endInlineRename()
                 rootListView.controller.activate()
                 listView.forceActiveFocus()
                 if (mouse.button === Qt.RightButton) {
@@ -587,14 +612,20 @@ Item {
                 property bool isDragActive: false
                 property bool pressedOnAlreadySelected: false
                 property bool pressedOnCurrent: false
+                // A double click emits pressed/released for its SECOND click too.
+                // Without this, that release restarts the rename timer that
+                // onDoubleClicked had just stopped, and the editor opens behind
+                // whatever the double click opened.
+                property bool suppressRenameOnRelease: false
                 property int rightPressIndex: -1
                 property bool isRightDragging: false
 
                 onPressed: (mouse) => {
+                    suppressRenameOnRelease = false
                     pressedOnAlreadySelected = isSelected && !isParent
 
                     if (rootListView.editingIndex >= 0 && rootListView.editingIndex !== index) {
-                        rootListView.editingIndex = -1
+                        rootListView.endInlineRename()
                     }
                     lastPressX = mouse.x
                     lastPressY = mouse.y
@@ -709,7 +740,7 @@ Item {
                                 rootListView.controller.model.toggleSelection(index)
                             }
                         } else if (!(mouse.modifiers & Qt.ShiftModifier) && !isParent) {
-                            if (pressedOnCurrent) {
+                            if (pressedOnCurrent && !suppressRenameOnRelease) {
                                 // Clicked the row the cursor was already on: start an
                                 // inline rename once the double-click window has passed.
                                 renameClickTimer.targetIndex = index
@@ -734,6 +765,7 @@ Item {
 
                 onDoubleClicked: (mouse) => {
                     renameClickTimer.stop()
+                    suppressRenameOnRelease = true
                     if (mouse.button === Qt.LeftButton) {
                         Qt.callLater(() => {
                             rootListView.controller.openItem(index)
@@ -816,17 +848,36 @@ Item {
                     // TextField exists only for the row actually being renamed -
                     // one per list rather than one per visible row.
                     Loader {
+                        id: renameLoader
                         anchors.fill: parent
                         anchors.topMargin: 2
                         anchors.bottomMargin: 2
                         active: rootListView.editingIndex === index
                         sourceComponent: renameEditorComponent
+
+                        // The editor is built from a Component, so it does NOT
+                        // inherit this delegate's model context. Every value it
+                        // needs is handed over explicitly here, where fileName,
+                        // filePath, isDir and index still resolve.
+                        onLoaded: {
+                            item.rowName = fileName
+                            item.rowPath = filePath
+                            item.rowIsDir = isDir
+                            item.rowIndex = index
+                            item.beginEditing()
+                        }
                     }
 
                     Component {
                         id: renameEditorComponent
 
                         TextField {
+                            property string rowName: ""
+                            property string rowPath: ""
+                            property bool rowIsDir: false
+                            property int rowIndex: -1
+                            property bool hadActiveFocus: false
+
                             font.family: Theme.fontFamily
                             font.pixelSize: Theme.fontSizeBase
                             color: Theme.textPrimary
@@ -843,21 +894,35 @@ Item {
                                 radius: 2
                             }
 
-                            property bool hadActiveFocus: false
-
                             onActiveFocusChanged: {
                                 if (activeFocus) {
                                     hadActiveFocus = true
-                                } else if (hadActiveFocus && rootListView.editingIndex === index) {
+                                    return
+                                }
+                                if (!hadActiveFocus) return
+                                // A reload destroys and rebuilds every delegate, which
+                                // drops focus for an instant. That is not the user
+                                // clicking away, so it must not end the rename - the
+                                // rebuilt editor takes focus again on its own.
+                                if (rootListView.isReloadingSamePath) return
+                                if (rootListView.editingIndex === rowIndex) {
                                     cancelRename()
                                 }
                             }
 
-                            Component.onCompleted: {
-                                text = (typeof fileName !== "undefined" && fileName) ? String(fileName) : ""
+                            onTextEdited: rootListView.editingText = text
+
+                            /// Called by the Loader once the row's values are set.
+                            function beginEditing() {
+                                // Resume from what was typed if this editor is a
+                                // rebuild, otherwise start from the file's name.
+                                text = (rootListView.editingText !== "") ? rootListView.editingText
+                                                                         : rowName
                                 forceActiveFocus()
+                                // Select the base name only, leaving the extension,
+                                // after the field has settled.
                                 Qt.callLater(() => {
-                                    let dot = isDir ? -1 : text.lastIndexOf(".")
+                                    let dot = rowIsDir ? -1 : text.lastIndexOf(".")
                                     if (dot > 0) {
                                         select(0, dot)
                                     } else {
@@ -872,17 +937,15 @@ Item {
 
                             function commitRename() {
                                 let newName = text.trim()
-                                let oldPath = (typeof filePath !== "undefined" && filePath) ? filePath : ""
-                                let currentName = (typeof fileName !== "undefined" && fileName) ? fileName : ""
-                                rootListView.editingIndex = -1
+                                rootListView.endInlineRename()
                                 listView.forceActiveFocus()
-                                if (newName !== "" && oldPath !== "" && newName !== currentName) {
-                                    rootListView.controller.renameItem(oldPath, newName)
+                                if (newName !== "" && rowPath !== "" && newName !== rowName) {
+                                    rootListView.controller.renameItem(rowPath, newName)
                                 }
                             }
 
                             function cancelRename() {
-                                rootListView.editingIndex = -1
+                                rootListView.endInlineRename()
                                 listView.forceActiveFocus()
                             }
                         }
@@ -927,9 +990,18 @@ Item {
         Connections {
             target: rootListView.controller
             function onCurrentPathChanged() {
-                rootListView.editingIndex = -1
+                rootListView.endInlineRename()
                 rootListView.isReloadingSamePath = false
                 rootListView.selectionAnchorIndex = -1
+            }
+            function onFileActivated(filePath) {
+                // A file was opened (double click, Enter, or F3/F4). Any rename
+                // waiting on its timer must not surface behind the dialog.
+                renameClickTimer.stop()
+                rootListView.endInlineRename()
+            }
+            function onInlineRenameRequested(index) {
+                rootListView.beginInlineRename(index)
             }
             function onCurrentIndexChanged(idx) {
                 if (listView.currentIndex !== idx) {
@@ -959,7 +1031,19 @@ Item {
                 }
             }
             function onCountChanged() {
-                rootListView.editingIndex = -1
+                if (rootListView.editingName !== "") {
+                    // Follow the file being renamed to its new row. If it is gone
+                    // from the listing the rename is over, and endInlineRename()
+                    // must run so reloads are resumed rather than left suspended.
+                    let moved = rootListView.controller.model.findItemIndex(rootListView.editingName)
+                    if (moved < 0) {
+                        rootListView.endInlineRename()
+                    } else {
+                        rootListView.editingIndex = moved
+                    }
+                } else {
+                    rootListView.editingIndex = -1
+                }
                 if (!rootListView.isReloadingSamePath) {
                     if (rootListView.controller.currentIndex >= 0 && rootListView.controller.currentIndex < listView.count) {
                         listView.currentIndex = rootListView.controller.currentIndex

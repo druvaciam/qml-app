@@ -3,6 +3,8 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QStorageInfo>
+#include <QSet>
+#include <QTimer>
 
 PanelController::PanelController(QObject *parent)
     : QObject(parent),
@@ -373,6 +375,9 @@ void PanelController::showContextMenu(int globalX, int globalY, int index)
         }
     }
 
+    // Remember what the folder held so a newly created item can be spotted below.
+    const QStringList namesBefore = m_model ? m_model->fileNames() : QStringList();
+
     if (pContextMenu) {
         HMENU hMenu = CreatePopupMenu();
         if (hMenu) {
@@ -425,11 +430,49 @@ void PanelController::showContextMenu(int globalX, int globalY, int index)
     }
 
     refresh();
+    trySelectNewItem(namesBefore, 3);
 #else
     Q_UNUSED(globalX);
     Q_UNUSED(globalY);
     Q_UNUSED(index);
 #endif
+}
+
+void PanelController::trySelectNewItem(const QStringList &namesBefore, int attemptsLeft)
+{
+    if (!m_model) return;
+
+    const QSet<QString> before(namesBefore.begin(), namesBefore.end());
+    const QStringList now = m_model->fileNames();
+
+    int newIndex = -1;
+    int newCount = 0;
+    for (int i = 0; i < now.size(); ++i) {
+        if (!before.contains(now.at(i))) {
+            ++newCount;
+            newIndex = m_model->findItemIndex(now.at(i));
+        }
+    }
+
+    // Exactly one new item means a "New >" command. Several means a paste or an
+    // extract, where renaming one of them would be wrong.
+    if (newCount == 1 && newIndex >= 0) {
+        setCurrentIndex(newIndex);
+        emit inlineRenameRequested(newIndex);
+        return;
+    }
+
+    // The shell may return before the file is on disk, and our own watcher
+    // reload is debounced, so look again a few times before giving up. Only
+    // retry when the listing is completely unchanged: if items disappeared, the
+    // command was a delete or a move and there is nothing to wait for.
+    const bool listingUnchanged = (newCount == 0 && now.size() == namesBefore.size());
+    if (listingUnchanged && attemptsLeft > 0) {
+        QTimer::singleShot(250, this, [this, namesBefore, attemptsLeft]() {
+            refresh();
+            trySelectNewItem(namesBefore, attemptsLeft - 1);
+        });
+    }
 }
 
 bool PanelController::renameItem(const QString &oldPath, const QString &newName)
