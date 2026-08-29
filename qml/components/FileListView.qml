@@ -114,11 +114,62 @@ Item {
         return ""
     }
 
+    // One long-press timer and one rename timer for the whole view. Previously
+    // each of the three empty-area handlers carried its own copy, and every row
+    // delegate built two more, so a 40-row list created 80 Timer objects.
+    Timer {
+        id: longPressTimer
+        interval: 400
+        repeat: false
+        property int targetIndex: -1
+        property real globalX: 0
+        property real globalY: 0
+        onTriggered: rootListView.controller.showContextMenu(globalX, globalY, targetIndex)
+    }
+
+    Timer {
+        id: renameClickTimer
+        interval: 450
+        repeat: false
+        property int targetIndex: -1
+        onTriggered: {
+            if (rootListView.editingIndex !== -1) return
+            if (targetIndex < 0 || listView.currentIndex !== targetIndex) return
+            if (!rootListView.controller.isActive) return
+            let it = rootListView.controller.model.get(targetIndex)
+            if (it && !it.isParent) {
+                rootListView.editingIndex = targetIndex
+                listView.positionViewAtIndex(targetIndex, ListView.Contain)
+            }
+        }
+    }
+
+    /// Arm the context menu for a right press. globalPt comes from mapToGlobal;
+    /// index is -1 for the folder background.
+    function armLongPress(globalPt, index) {
+        longPressTimer.globalX = globalPt.x
+        longPressTimer.globalY = globalPt.y
+        longPressTimer.targetIndex = index
+        longPressTimer.start()
+    }
+
+    function longPressPending() { return longPressTimer.running }
+    function cancelLongPress() { longPressTimer.stop() }
+
+    /// A right press released before the timer fired: show the menu immediately.
+    function releaseLongPress(globalPt) {
+        if (!longPressTimer.running) return false
+        longPressTimer.stop()
+        rootListView.controller.showContextMenu(globalPt.x, globalPt.y, longPressTimer.targetIndex)
+        return true
+    }
+
     function startInlineRename() {
         let idx = listView.currentIndex
         if (idx >= 0 && idx < listView.count) {
             let map = rootListView.controller.model.get(idx)
             if (map && map.filePath && !map.isParent) {
+                renameClickTimer.stop()
                 editingIndex = idx
                 listView.positionViewAtIndex(idx, ListView.Contain)
             }
@@ -335,43 +386,22 @@ Item {
         acceptedButtons: Qt.LeftButton | Qt.RightButton
         z: 0
 
-        property int lastPressX: 0
-        property int lastPressY: 0
-
-        Timer {
-            id: bgLongRightPressTimer
-            interval: 400
-            repeat: false
-            onTriggered: {
-                let pt = bgMouseArea.mapToGlobal(bgMouseArea.lastPressX, bgMouseArea.lastPressY)
-                rootListView.controller.showContextMenu(pt.x, pt.y, -1)
-            }
-        }
-
         onPressed: (mouse) => {
             rootListView.editingIndex = -1
-            lastPressX = mouse.x
-            lastPressY = mouse.y
             rootListView.controller.activate()
             listView.forceActiveFocus()
             if (mouse.button === Qt.RightButton) {
-                bgLongRightPressTimer.start()
+                rootListView.armLongPress(mapToGlobal(mouse.x, mouse.y), -1)
             }
         }
 
         onReleased: (mouse) => {
             if (mouse.button === Qt.RightButton) {
-                if (bgLongRightPressTimer.running) {
-                    bgLongRightPressTimer.stop()
-                    let pt = bgMouseArea.mapToGlobal(mouse.x, mouse.y)
-                    rootListView.controller.showContextMenu(pt.x, pt.y, -1)
-                }
+                rootListView.releaseLongPress(mapToGlobal(mouse.x, mouse.y))
             }
         }
 
-        onCanceled: {
-            bgLongRightPressTimer.stop()
-        }
+        onCanceled: rootListView.cancelLongPress()
     }
 
     // Drag and Drop Area for receiving drops from external sources (e.g. Windows Explorer)
@@ -478,44 +508,22 @@ Item {
                 acceptedButtons: Qt.LeftButton | Qt.RightButton
                 preventStealing: true
 
-                property int lastPressX: 0
-                property int lastPressY: 0
-
-                Timer {
-                    id: footerLongRightPressTimer
-                    interval: 400
-                    repeat: false
-                    onTriggered: {
-                        let pt = footerMouseArea.mapToGlobal(footerMouseArea.lastPressX, footerMouseArea.lastPressY)
-                        rootListView.controller.showContextMenu(pt.x, pt.y, -1)
-                    }
-                }
-
                 onPressed: (mouse) => {
                     rootListView.editingIndex = -1
-                    lastPressX = mouse.x
-                    lastPressY = mouse.y
                     rootListView.controller.activate()
                     listView.forceActiveFocus()
-
                     if (mouse.button === Qt.RightButton) {
-                        footerLongRightPressTimer.start()
+                        rootListView.armLongPress(mapToGlobal(mouse.x, mouse.y), -1)
                     }
                 }
 
                 onReleased: (mouse) => {
                     if (mouse.button === Qt.RightButton) {
-                        if (footerLongRightPressTimer.running) {
-                            footerLongRightPressTimer.stop()
-                            let pt = footerMouseArea.mapToGlobal(mouse.x, mouse.y)
-                            rootListView.controller.showContextMenu(pt.x, pt.y, -1)
-                        }
+                        rootListView.releaseLongPress(mapToGlobal(mouse.x, mouse.y))
                     }
                 }
 
-                onCanceled: {
-                    footerLongRightPressTimer.stop()
-                }
+                onCanceled: rootListView.cancelLongPress()
             }
         }
 
@@ -530,46 +538,23 @@ Item {
             preventStealing: true
             z: 0
 
-            property int lastPressX: 0
-            property int lastPressY: 0
-
-            Timer {
-                id: emptyLongRightPressTimer
-                interval: 400
-                repeat: false
-                onTriggered: {
-                    let pt = emptyAreaMouse.mapToGlobal(emptyAreaMouse.lastPressX, emptyAreaMouse.lastPressY)
-                    rootListView.controller.showContextMenu(pt.x, pt.y, -1)
-                }
-            }
-
             onPressed: (mouse) => {
-                // When clicked on free area with left mouse, renaming should be canceled
+                // Clicking free space with the left button cancels an inline rename
                 rootListView.editingIndex = -1
-
-                lastPressX = mouse.x
-                lastPressY = mouse.y
                 rootListView.controller.activate()
                 listView.forceActiveFocus()
-
                 if (mouse.button === Qt.RightButton) {
-                    emptyLongRightPressTimer.start()
+                    rootListView.armLongPress(mapToGlobal(mouse.x, mouse.y), -1)
                 }
             }
 
             onReleased: (mouse) => {
                 if (mouse.button === Qt.RightButton) {
-                    if (emptyLongRightPressTimer.running) {
-                        emptyLongRightPressTimer.stop()
-                        let pt = emptyAreaMouse.mapToGlobal(mouse.x, mouse.y)
-                        rootListView.controller.showContextMenu(pt.x, pt.y, -1)
-                    }
+                    rootListView.releaseLongPress(mapToGlobal(mouse.x, mouse.y))
                 }
             }
 
-            onCanceled: {
-                emptyLongRightPressTimer.stop()
-            }
+            onCanceled: rootListView.cancelLongPress()
         }
 
         delegate: Rectangle {
@@ -605,33 +590,6 @@ Item {
                 property int rightPressIndex: -1
                 property bool isRightDragging: false
 
-                Timer {
-                    id: rowLongRightPressTimer
-                    interval: 400
-                    repeat: false
-                    onTriggered: {
-                        let pt = rowMouse.mapToGlobal(rowMouse.lastPressX, rowMouse.lastPressY)
-                        rootListView.controller.showContextMenu(pt.x, pt.y, index)
-                    }
-                }
-
-                // Delayed timer for a second left click on the row the cursor is
-                // already on (the delay lets a real double click win instead)
-                Timer {
-                    id: renameClickTimer
-                    interval: 450
-                    repeat: false
-                    onTriggered: {
-                        if (rootListView.editingIndex === -1 &&
-                            listView.currentIndex === index &&
-                            !isParent &&
-                            rootListView.controller.isActive) {
-                            rootListView.editingIndex = index
-                            listView.positionViewAtIndex(index, ListView.Contain)
-                        }
-                    }
-                }
-
                 onPressed: (mouse) => {
                     pressedOnAlreadySelected = isSelected && !isParent
 
@@ -656,7 +614,7 @@ Item {
                         renameClickTimer.stop()
                         rightPressIndex = index
                         isRightDragging = false
-                        rowLongRightPressTimer.start()
+                        rootListView.armLongPress(mapToGlobal(mouse.x, mouse.y), index)
                     } else if (mouse.button === Qt.LeftButton) {
                         if (mouse.modifiers & Qt.ShiftModifier) {
                             renameClickTimer.stop()
@@ -685,7 +643,7 @@ Item {
                         let dx = Math.abs(mouse.x - lastPressX)
                         let dy = Math.abs(mouse.y - lastPressY)
                         if (!isRightDragging && (dx > 6 || dy > 6)) {
-                            rowLongRightPressTimer.stop()
+                            rootListView.cancelLongPress()
                             isRightDragging = true
                             rootListView.controller.model.beginRightDragSelection(rightPressIndex, (mouse.modifiers & Qt.ShiftModifier) !== 0)
                         }
@@ -739,8 +697,8 @@ Item {
                             rootListView.controller.model.endRightDragSelection()
                             return
                         }
-                        if (rowLongRightPressTimer.running) {
-                            rowLongRightPressTimer.stop()
+                        if (rootListView.longPressPending()) {
+                            rootListView.cancelLongPress()
                             // Short right click: toggle selection (classic Commander style)
                             rootListView.controller.model.toggleSelection(index)
                         }
@@ -754,6 +712,7 @@ Item {
                             if (pressedOnCurrent) {
                                 // Clicked the row the cursor was already on: start an
                                 // inline rename once the double-click window has passed.
+                                renameClickTimer.targetIndex = index
                                 renameClickTimer.start()
                             }
                         }
@@ -761,7 +720,7 @@ Item {
                 }
 
                 onCanceled: {
-                    rowLongRightPressTimer.stop()
+                    rootListView.cancelLongPress()
                     renameClickTimer.stop()
                     if (isRightDragging) {
                         isRightDragging = false
@@ -853,44 +812,49 @@ Item {
                         visible: rootListView.editingIndex !== index
                     }
 
-                    // Inline text input when editing (F2)
-                    TextField {
-                        id: inlineRenameInput
+                    // Inline text input when editing (F2). Behind a Loader so the
+                    // TextField exists only for the row actually being renamed -
+                    // one per list rather than one per visible row.
+                    Loader {
                         anchors.fill: parent
                         anchors.topMargin: 2
                         anchors.bottomMargin: 2
-                        visible: rootListView.editingIndex === index
-                        text: (typeof fileName !== "undefined" && fileName) ? fileName : ""
-                        font.family: Theme.fontFamily
-                        font.pixelSize: Theme.fontSizeBase
-                        color: Theme.textPrimary
-                        selectionColor: Theme.accent
-                        selectedTextColor: "#0f172a"
-                        selectByMouse: true
-                        verticalAlignment: TextInput.AlignVCenter
-                        padding: 4
+                        active: rootListView.editingIndex === index
+                        sourceComponent: renameEditorComponent
+                    }
 
-                        background: Rectangle {
-                            color: Theme.bgHeader
-                            border.color: Theme.accent
-                            border.width: 1.5
-                            radius: 2
-                        }
+                    Component {
+                        id: renameEditorComponent
 
-                        property bool hadActiveFocus: false
+                        TextField {
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.fontSizeBase
+                            color: Theme.textPrimary
+                            selectionColor: Theme.accent
+                            selectedTextColor: "#0f172a"
+                            selectByMouse: true
+                            verticalAlignment: TextInput.AlignVCenter
+                            padding: 4
 
-                        onActiveFocusChanged: {
-                            if (activeFocus) {
-                                hadActiveFocus = true
-                            } else if (hadActiveFocus && rootListView.editingIndex === index) {
-                                cancelRename()
+                            background: Rectangle {
+                                color: Theme.bgHeader
+                                border.color: Theme.accent
+                                border.width: 1.5
+                                radius: 2
                             }
-                        }
 
-                        onVisibleChanged: {
-                            if (visible && typeof fileName !== "undefined" && fileName) {
-                                hadActiveFocus = false
-                                text = String(fileName)
+                            property bool hadActiveFocus: false
+
+                            onActiveFocusChanged: {
+                                if (activeFocus) {
+                                    hadActiveFocus = true
+                                } else if (hadActiveFocus && rootListView.editingIndex === index) {
+                                    cancelRename()
+                                }
+                            }
+
+                            Component.onCompleted: {
+                                text = (typeof fileName !== "undefined" && fileName) ? String(fileName) : ""
                                 forceActiveFocus()
                                 Qt.callLater(() => {
                                     let dot = isDir ? -1 : text.lastIndexOf(".")
@@ -900,29 +864,27 @@ Item {
                                         selectAll()
                                     }
                                 })
-                            } else {
-                                hadActiveFocus = false
                             }
-                        }
 
-                        Keys.onReturnPressed: commitRename()
-                        Keys.onEnterPressed: commitRename()
-                        Keys.onEscapePressed: cancelRename()
+                            Keys.onReturnPressed: commitRename()
+                            Keys.onEnterPressed: commitRename()
+                            Keys.onEscapePressed: cancelRename()
 
-                        function commitRename() {
-                            let newName = text.trim()
-                            let oldPath = (typeof filePath !== "undefined" && filePath) ? filePath : ""
-                            let currentName = (typeof fileName !== "undefined" && fileName) ? fileName : ""
-                            rootListView.editingIndex = -1
-                            listView.forceActiveFocus()
-                            if (newName !== "" && oldPath !== "" && newName !== currentName) {
-                                rootListView.controller.renameItem(oldPath, newName)
+                            function commitRename() {
+                                let newName = text.trim()
+                                let oldPath = (typeof filePath !== "undefined" && filePath) ? filePath : ""
+                                let currentName = (typeof fileName !== "undefined" && fileName) ? fileName : ""
+                                rootListView.editingIndex = -1
+                                listView.forceActiveFocus()
+                                if (newName !== "" && oldPath !== "" && newName !== currentName) {
+                                    rootListView.controller.renameItem(oldPath, newName)
+                                }
                             }
-                        }
 
-                        function cancelRename() {
-                            rootListView.editingIndex = -1
-                            listView.forceActiveFocus()
+                            function cancelRename() {
+                                rootListView.editingIndex = -1
+                                listView.forceActiveFocus()
+                            }
                         }
                     }
                 }

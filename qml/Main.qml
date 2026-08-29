@@ -82,6 +82,47 @@ ApplicationWindow {
         return p.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase()
     }
 
+    /// Which pane is under (rootX, rootY), if either. Returns the pane item and
+    /// its controller so callers do not repeat the hit test.
+    function paneAt(rootX, rootY) {
+        let l = leftPanel.mapFromItem(null, rootX, rootY)
+        if (l.x >= 0 && l.x <= leftPanel.width && l.y >= 0 && l.y <= leftPanel.height) {
+            return { pane: leftPanel, other: rightPanel, controller: appCtrl.leftPanel }
+        }
+        let r = rightPanel.mapFromItem(null, rootX, rootY)
+        if (r.x >= 0 && r.x <= rightPanel.width && r.y >= 0 && r.y <= rightPanel.height) {
+            return { pane: rightPanel, other: leftPanel, controller: appCtrl.rightPanel }
+        }
+        return null
+    }
+
+    /// Shift forces Move, Ctrl forces Copy, otherwise dragging within one pane
+    /// moves and dragging across panes copies.
+    function dropIsMove(modifiers, isSamePanel) {
+        if ((modifiers & Qt.ShiftModifier) !== 0) return true
+        if ((modifiers & Qt.ControlModifier) !== 0) return false
+        return isSamePanel
+    }
+
+    function dragSourceDir() {
+        if (dragSourceController && dragSourceController.currentPath) {
+            return dragSourceController.currentPath
+        }
+        if (draggedPaths.length > 0) {
+            let p0 = draggedPaths[0].replace(/\\/g, "/")
+            let idx = p0.lastIndexOf("/")
+            if (idx > 0) return p0.substring(0, idx)
+        }
+        return ""
+    }
+
+    /// A drop is pointless if it lands in the folder the items already live in,
+    /// or onto one of the dragged items itself.
+    function dropIsRedundant(dest, sourceDir) {
+        if (normalizePath(dest) === normalizePath(sourceDir)) return true
+        return draggedPaths.some(p => normalizePath(p) === normalizePath(dest))
+    }
+
     function updateGlobalDrag(rootX, rootY, modifiers) {
         if (!isDragging) return
         dragMouseX = rootX
@@ -90,62 +131,31 @@ ApplicationWindow {
             dragModifiers = modifiers
         }
 
-        let sourceDir = (dragSourceController && dragSourceController.currentPath) ? dragSourceController.currentPath : ""
-
-        // Check hover on left panel
-        let leftLocal = leftPanel.mapFromItem(null, rootX, rootY)
-        let inLeft = (leftLocal.x >= 0 && leftLocal.x <= leftPanel.width &&
-                      leftLocal.y >= 0 && leftLocal.y <= leftPanel.height)
-
-        // Check hover on right panel
-        let rightLocal = rightPanel.mapFromItem(null, rootX, rootY)
-        let inRight = (rightLocal.x >= 0 && rightLocal.x <= rightPanel.width &&
-                       rightLocal.y >= 0 && rightLocal.y <= rightPanel.height)
-
+        let hit = paneAt(rootX, rootY)
         let isSamePanel = false
-        let isValid = false
-        if (inLeft) {
-            let listLocal = leftPanel.fileListView.mapFromItem(null, rootX, rootY)
-            leftPanel.fileListView.updateDragHover(listLocal.x, listLocal.y)
-            rightPanel.fileListView.clearDragHover()
-            let hoveredFolder = leftPanel.fileListView.getHoveredFolder()
-            let dest = hoveredFolder ? hoveredFolder : appCtrl.leftPanel.currentPath
-            let isSame = (normalizePath(dest) === normalizePath(sourceDir)) ||
-                         draggedPaths.some(p => normalizePath(p) === normalizePath(dest))
-            leftPanel.isDragTarget = !isSame
-            rightPanel.isDragTarget = false
-            isSamePanel = (dragSourceController === appCtrl.leftPanel)
-            isValid = !isSame
-        } else if (inRight) {
-            let listLocal = rightPanel.fileListView.mapFromItem(null, rootX, rootY)
-            rightPanel.fileListView.updateDragHover(listLocal.x, listLocal.y)
-            leftPanel.fileListView.clearDragHover()
-            let hoveredFolder = rightPanel.fileListView.getHoveredFolder()
-            let dest = hoveredFolder ? hoveredFolder : appCtrl.rightPanel.currentPath
-            let isSame = (normalizePath(dest) === normalizePath(sourceDir)) ||
-                         draggedPaths.some(p => normalizePath(p) === normalizePath(dest))
-            rightPanel.isDragTarget = !isSame
-            leftPanel.isDragTarget = false
-            isSamePanel = (dragSourceController === appCtrl.rightPanel)
-            isValid = !isSame
+
+        if (hit) {
+            let listLocal = hit.pane.fileListView.mapFromItem(null, rootX, rootY)
+            hit.pane.fileListView.updateDragHover(listLocal.x, listLocal.y)
+            hit.other.fileListView.clearDragHover()
+
+            let hoveredFolder = hit.pane.fileListView.getHoveredFolder()
+            let dest = hoveredFolder ? hoveredFolder : hit.controller.currentPath
+            let redundant = dropIsRedundant(dest, dragSourceDir())
+
+            hit.pane.isDragTarget = !redundant
+            hit.other.isDragTarget = false
+            isSamePanel = (dragSourceController === hit.controller)
+            dragIsValidTarget = !redundant
         } else {
             leftPanel.isDragTarget = false
             rightPanel.isDragTarget = false
             leftPanel.fileListView.clearDragHover()
             rightPanel.fileListView.clearDragHover()
-            isValid = false
+            dragIsValidTarget = false
         }
 
-        dragIsValidTarget = isValid
-
-        // Same panel (subfolder) defaults to Move, cross-border defaults to Copy. Modifiers override.
-        if ((dragModifiers & Qt.ShiftModifier) !== 0) {
-            dragIsMove = true
-        } else if ((dragModifiers & Qt.ControlModifier) !== 0) {
-            dragIsMove = false
-        } else {
-            dragIsMove = isSamePanel
-        }
+        dragIsMove = dropIsMove(dragModifiers, isSamePanel)
     }
 
     function endGlobalDrag(rootX, rootY, modifiers) {
@@ -155,49 +165,25 @@ ApplicationWindow {
             dragModifiers = modifiers
         }
 
-        let sourceDir = (dragSourceController && dragSourceController.currentPath) ? dragSourceController.currentPath : ""
-        if (!sourceDir && paths.length > 0) {
-            let p0 = paths[0].replace(/\\/g, "/")
-            let idx = p0.lastIndexOf("/")
-            if (idx > 0) sourceDir = p0.substring(0, idx)
-        }
-
-        let leftLocal = leftPanel.mapFromItem(null, rootX, rootY)
-        let inLeft = (leftLocal.x >= 0 && leftLocal.x <= leftPanel.width &&
-                      leftLocal.y >= 0 && leftLocal.y <= leftPanel.height)
-
-        let rightLocal = rightPanel.mapFromItem(null, rootX, rootY)
-        let inRight = (rightLocal.x >= 0 && rightLocal.x <= rightPanel.width &&
-                       rightLocal.y >= 0 && rightLocal.y <= rightPanel.height)
+        let sourceDir = dragSourceDir()
+        let hit = paneAt(rootX, rootY)
 
         let dest = ""
         let isSamePanel = false
-        if (inLeft) {
-            let folder = leftPanel.fileListView.getHoveredFolder()
-            dest = folder ? folder : appCtrl.leftPanel.currentPath
-            isSamePanel = (dragSourceController === appCtrl.leftPanel)
-        } else if (inRight) {
-            let folder = rightPanel.fileListView.getHoveredFolder()
-            dest = folder ? folder : appCtrl.rightPanel.currentPath
-            isSamePanel = (dragSourceController === appCtrl.rightPanel)
+        if (hit) {
+            let folder = hit.pane.fileListView.getHoveredFolder()
+            dest = folder ? folder : hit.controller.currentPath
+            isSamePanel = (dragSourceController === hit.controller)
         }
 
-        let isSameFolder = (normalizePath(dest) === normalizePath(sourceDir))
-        let isDroppedOnSelf = paths.some(p => normalizePath(p) === normalizePath(dest))
-
-        let isMove = false
-        if ((dragModifiers & Qt.ShiftModifier) !== 0) {
-            isMove = true
-        } else if ((dragModifiers & Qt.ControlModifier) !== 0) {
-            isMove = false
-        } else {
-            isMove = isSamePanel
-        }
+        let redundant = dest ? dropIsRedundant(dest, sourceDir) : true
+        let isMove = dropIsMove(dragModifiers, isSamePanel)
 
         cancelGlobalDrag()
 
-        if (isSameFolder || isDroppedOnSelf) {
-            // Dragged to the same folder as source or onto itself, just cancel
+        if (redundant) {
+            // Dropped back into the source folder or onto one of the dragged
+            // items, so there is nothing to do
             return
         }
 
