@@ -665,6 +665,27 @@ ApplicationWindow {
         onClosed: restoreActiveFocus()
     }
 
+    // Raised when a copy or move would replace files already at the destination.
+    // Windows never gets here: the shell shows its own Replace-or-Skip dialog.
+    ConflictDialog {
+        id: conflictDialog
+        onResolved: (policy, sources, destination, isMove) => {
+            if (isMove) {
+                appCtrl.fileOps.moveItems(sources, destination, policy)
+            } else {
+                appCtrl.fileOps.copyItems(sources, destination, policy)
+            }
+        }
+        onClosed: restoreActiveFocus()
+    }
+
+    Connections {
+        target: appCtrl.fileOps
+        function onConflictsFound(names, sources, destination, isMove) {
+            conflictDialog.open(names, sources, destination, isMove)
+        }
+    }
+
     ConfirmDeleteDialog {
         id: confirmDeleteDialog
         onAccepted: (items, permanent) => {
@@ -776,6 +797,7 @@ ApplicationWindow {
     // Global Shortcuts
     Shortcut {
         sequence: "Tab"
+        enabled: !anyModalOpen()
         onActivated: {
             appCtrl.toggleActivePanel()
             if (appCtrl.activePanelIndex === 0) {
@@ -788,31 +810,37 @@ ApplicationWindow {
 
     Shortcut {
         sequence: "F2"
+        enabled: !anyModalOpen()
         onActivated: executeRename()
     }
 
     Shortcut {
         sequence: "F3"
+        enabled: !anyModalOpen()
         onActivated: executeView()
     }
 
     Shortcut {
         sequence: "F4"
+        enabled: !anyModalOpen()
         onActivated: executeEdit()
     }
 
     Shortcut {
         sequence: "F5"
+        enabled: !anyModalOpen()
         onActivated: executeCopy()
     }
 
     Shortcut {
         sequence: "F6"
+        enabled: !anyModalOpen()
         onActivated: executeMove()
     }
 
     Shortcut {
         sequence: "F7"
+        enabled: !anyModalOpen()
         onActivated: {
             cancelPendingRename()
             newFolderDialog.open()
@@ -821,46 +849,55 @@ ApplicationWindow {
 
     Shortcut {
         sequence: "F8"
+        enabled: !anyModalOpen()
         onActivated: executeDelete(false)
     }
 
     Shortcut {
         sequence: "Delete"
+        enabled: !anyModalOpen()
         onActivated: executeDelete(false)
     }
 
     Shortcut {
         sequence: "Shift+Delete"
+        enabled: !anyModalOpen()
         onActivated: executeDelete(true)
     }
 
     Shortcut {
         sequence: "Ctrl+U"
+        enabled: !anyModalOpen()
         onActivated: appCtrl.swapPanes()
     }
 
     Shortcut {
         sequence: "Ctrl+E"
+        enabled: !anyModalOpen()
         onActivated: appCtrl.equalizePanes()
     }
 
     Shortcut {
         sequence: "Ctrl+R"
+        enabled: !anyModalOpen()
         onActivated: appCtrl.refreshAll()
     }
 
     Shortcut {
         sequence: "Ctrl+T"
+        enabled: !anyModalOpen()
         onActivated: appCtrl.openTerminalInActivePanel()
     }
 
     Shortcut {
         sequence: "Ctrl+H"
+        enabled: !anyModalOpen()
         onActivated: appCtrl.toggleHiddenFiles()
     }
 
     Shortcut {
         sequence: "Ctrl+F"
+        enabled: !anyModalOpen()
         onActivated: {
             if (appCtrl.activePanelIndex === 0) {
                 leftPanel.focusFilter()
@@ -868,6 +905,16 @@ ApplicationWindow {
                 rightPanel.focusFilter()
             }
         }
+    }
+
+    /// True while any modal is on screen. Window-level Shortcut elements fire no
+    /// matter what has focus, so without gating on this, F5 would start a copy
+    /// and Delete would open a confirmation while a dialog was still waiting for
+    /// an answer.
+    function anyModalOpen() {
+        return copyMoveDialog.visible || previewDialog.visible ||
+               newFolderDialog.visible || conflictDialog.visible ||
+               confirmDeleteDialog.visible || messageDialog.visible
     }
 
     function isInputFocused() {
@@ -879,9 +926,7 @@ ApplicationWindow {
             (rightPanel && rightPanel.fileListView && rightPanel.fileListView.editingIndex !== -1)) {
             return true
         }
-        return (copyMoveDialog.visible || previewDialog.visible || 
-                newFolderDialog.visible ||
-                confirmDeleteDialog.visible || messageDialog.visible)
+        return anyModalOpen()
     }
 
     Shortcut {

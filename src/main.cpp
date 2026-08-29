@@ -2,6 +2,7 @@
 #include <QQmlApplicationEngine>
 #include <QQuickStyle>
 #include <QIcon>
+#include <QDateTime>
 #include <QDir>
 #include <QFile>
 #include <QMutex>
@@ -36,6 +37,13 @@ static void customLog(QtMsgType, const QMessageLogContext &, const QString &msg)
             delete f;
             return nullptr;
         }
+        // The log appends across runs, so mark where this one starts. Without
+        // this it is impossible to tell a live error from an old one.
+        QTextStream header(f);
+        header << "\n===== session started "
+               << QDateTime::currentDateTime().toString(Qt::ISODate)
+               << " =====\n";
+        header.flush();
         return f;
     }();
 

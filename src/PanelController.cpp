@@ -155,6 +155,15 @@ void PanelController::refresh()
     updateCurrentDriveInfo();
 }
 
+void PanelController::selectItemByName(const QString &fileName)
+{
+    if (!m_model || fileName.isEmpty()) return;
+    const int idx = m_model->findItemIndex(fileName);
+    if (idx < 0) return;
+    setCurrentIndex(idx);
+    emit selectItemRequested(idx);
+}
+
 void PanelController::refreshDrives()
 {
     m_driveList = DriveInfo::getMountedDrives();

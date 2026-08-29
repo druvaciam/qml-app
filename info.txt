@@ -199,11 +199,13 @@ To let WSL Ubuntu communicate with Docker and display the GUI via WSLg:
 Step 4: Launch the Linux GUI Window on Windows via WSLg
 -------------------------------------------------------
 Open your WSL terminal (`wsl`) and run:
+  mkdir -p ~/.config/QmlCommander
   docker run --rm -it \
     -e DISPLAY=$DISPLAY \
     -v /tmp/.X11-unix:/tmp/.X11-unix \
     -v /mnt/wslg:/mnt/wslg \
     -v ~/.config/QmlCommander:/root/.config/QtCommanderTeam \
+    -v /mnt/c:/mnt/c \
     qmlcommander-linux:latest
 
 Note: 
@@ -211,6 +213,36 @@ Note:
 - `-v ~/.config/QmlCommander:/root/.config/QtCommanderTeam` mounts a folder from 
   your WSL home directory so window size, position, and panel session paths are preserved 
   even when the container stops (`--rm`).
+- `-v /mnt/c:/mnt/c` makes your Windows C: drive reachable. See below.
+- Run `mkdir -p ~/.config/QmlCommander` first, otherwise Docker creates that
+  folder for you as root and you need sudo to touch it afterwards.
+
+Reaching your Windows drives from the Linux build
+--------------------------------------------------
+A container only sees what you mount into it. Without `-v /mnt/c:/mnt/c` there
+is no C: drive inside the container at all - the drive bar lists only the
+container's own filesystem, and no amount of navigating will find your Windows
+files.
+
+With that mount, C: appears in the drive bar at the top of each pane and can be
+clicked like any other drive. The app labels `/mnt/c` as `C:` automatically,
+because DriveInfo recognises the WSL `/mnt/<letter>` convention. You can also
+click the path text in the breadcrumb bar to make it editable and type `/mnt/c`.
+
+Mount other drives the same way, e.g. `-v /mnt/d:/mnt/d`.
+
+Two things to expect when working across the Windows boundary:
+
+- Writing to C:\ itself (that is, `/mnt/c`) is refused. Windows requires
+  administrator rights there and a container has no way to ask for them, so the
+  copy fails. Use a subfolder such as `/mnt/c/Temp`. The same copy succeeds on
+  the Windows build, where the shell raises a UAC prompt you can approve.
+
+- If you were last browsing `/mnt/c/...` and then start the container WITHOUT
+  that mount, the saved path no longer exists. The app falls back to the home
+  folder and, because the session is written on every navigation, that fallback
+  replaces the stored path. Keep the mount in the command to avoid losing your
+  place.
 
 
 ================================================================================

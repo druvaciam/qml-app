@@ -96,6 +96,12 @@ public:
 
     // --- View Updates ---
     Q_INVOKABLE void refresh();
+
+    /**
+     * @brief Move the cursor onto the item with this name, if it is listed.
+     * Used after New Folder so the folder you just made is the current row.
+     */
+    Q_INVOKABLE void selectItemByName(const QString &fileName);
     Q_INVOKABLE void refreshDrives();
     Q_INVOKABLE void toggleShowHidden();
 
@@ -156,6 +162,8 @@ signals:
     /// A shell command created exactly one new item; the view should put it
     /// into inline rename, the way Explorer does after New > Text Document.
     void inlineRenameRequested(int index);
+    /// Make this row current and keep it current across the reload in flight.
+    void selectItemRequested(int index);
 
 private:
     void pushHistory(const QString &path);

@@ -354,6 +354,42 @@ void FileListModel::deselectAll()
     updateSelectionStats();
 }
 
+void FileListModel::deselectPaths(const QStringList &paths)
+{
+    if (paths.isEmpty() || m_items.isEmpty()) {
+        return;
+    }
+
+    // Paths can arrive from a drop or the clipboard with different separators or
+    // letter case, so compare them the way the filesystem would.
+    auto key = [](const QString &p) {
+#ifdef Q_OS_WIN
+        return QDir::cleanPath(p).toLower();
+#else
+        return QDir::cleanPath(p);
+#endif
+    };
+
+    QSet<QString> drop;
+    drop.reserve(paths.size());
+    for (const QString &p : paths) {
+        drop.insert(key(p));
+    }
+
+    bool changed = false;
+    for (int i = 0; i < static_cast<int>(m_items.size()); ++i) {
+        if (m_items[i].isSelected && drop.contains(key(m_items[i].fullPath))) {
+            m_items[i].isSelected = false;
+            changed = true;
+        }
+    }
+
+    if (changed) {
+        emit dataChanged(index(0, 0), index(static_cast<int>(m_items.size()) - 1, 0), {IsSelectedRole});
+        updateSelectionStats();
+    }
+}
+
 void FileListModel::invertSelection()
 {
     for (int i = 0; i < static_cast<int>(m_items.size()); ++i) {

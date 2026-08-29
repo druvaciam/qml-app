@@ -156,6 +156,22 @@ Item {
         longPressTimer.start()
     }
 
+    /// Extend a right-drag selection to targetIdx.
+    ///
+    /// Deliberately a function on this item rather than inline in the delegate.
+    /// Scrolling to the target recycles delegates, so a delegate that called
+    /// this can be destroyed by the very first line of it. Once execution is
+    /// inside this function the names resolve in the root's scope and survive
+    /// that; inline, the next statement hit "rootListView is undefined".
+    function applyRightDragTo(targetIdx) {
+        if (targetIdx < 0 || targetIdx >= listView.count) return
+        rootListView.controller.model.updateRightDragSelection(targetIdx)
+        // listView.onCurrentIndexChanged pushes this through to the controller,
+        // so setting controller.currentIndex here as well would be redundant.
+        listView.currentIndex = targetIdx
+        listView.positionViewAtIndex(targetIdx, ListView.Contain)
+    }
+
     function longPressPending() { return longPressTimer.running }
     function cancelLongPress() { longPressTimer.stop() }
 
@@ -178,14 +194,14 @@ Item {
         renameClickTimer.stop()
         // Stop watcher reloads from pulling the editor apart while it is open.
         rootListView.controller.model.setReloadSuspended(true)
-        rootListView.editingName = map.fileName
+        rootListView.editingName = String(map.fileName || "")
         rootListView.editingText = ""
         rootListView.editingIndex = idx
         listView.currentIndex = idx
         rootListView.controller.currentIndex = idx
         // A reload may already have queued a restoreViewState(); make it restore
         // to this row rather than the one that was current a moment ago.
-        rootListView.savedCurrentItemName = map.fileName
+        rootListView.savedCurrentItemName = rootListView.editingName
         listView.positionViewAtIndex(idx, ListView.Contain)
     }
 
@@ -636,8 +652,10 @@ Item {
 
                     let prevIndex = listView.currentIndex
                     pressedOnCurrent = (prevIndex === index)
+                    // listView.onCurrentIndexChanged forwards this to the
+                    // controller, so setting it again here is both redundant and
+                    // another touch after the cursor has already moved.
                     listView.currentIndex = index
-                    rootListView.controller.currentIndex = index
                     rootListView.controller.activate()
                     listView.forceActiveFocus()
 
@@ -687,12 +705,9 @@ Item {
                                 else if (contentPos.y >= listView.contentHeight) targetIdx = listView.count - 1
                                 else targetIdx = Math.max(0, Math.min(listView.count - 1, Math.floor(contentPos.y / Theme.rowHeight)))
                             }
-                            if (targetIdx >= 0 && targetIdx < listView.count) {
-                                rootListView.controller.model.updateRightDragSelection(targetIdx)
-                                listView.currentIndex = targetIdx
-                                rootListView.controller.currentIndex = targetIdx
-                                listView.positionViewAtIndex(targetIdx, ListView.Contain)
-                            }
+                            // Nothing may touch this delegate after the call:
+                            // it may no longer exist when the call returns.
+                            rootListView.applyRightDragTo(targetIdx)
                             return
                         }
                     } else if (isDragActive) {
@@ -855,15 +870,20 @@ Item {
                         active: rootListView.editingIndex === index
                         sourceComponent: renameEditorComponent
 
-                        // The editor is built from a Component, so it does NOT
-                        // inherit this delegate's model context. Every value it
-                        // needs is handed over explicitly here, where fileName,
-                        // filePath, isDir and index still resolve.
+                        // The editor is built from a Component and does NOT
+                        // inherit this delegate's model context. Read the row
+                        // from the model by index instead: the context roles are
+                        // not reliably present while a delegate is being built
+                        // or recycled, which produced "Cannot assign [undefined]".
                         onLoaded: {
-                            item.rowName = fileName
-                            item.rowPath = filePath
-                            item.rowIsDir = isDir
-                            item.rowIndex = index
+                            let idx = rootListView.editingIndex
+                            let row = (idx >= 0) ? rootListView.controller.model.get(idx) : null
+                            // String() so these can never be undefined, whatever
+                            // state the model is in when the editor is built.
+                            item.rowIndex = idx
+                            item.rowName = String((row && row.fileName) || rootListView.editingName || "")
+                            item.rowPath = String((row && row.filePath) || "")
+                            item.rowIsDir = ((row && row.isDir) === true)
                             item.beginEditing()
                         }
                     }
@@ -999,6 +1019,16 @@ Item {
                 // waiting on its timer must not surface behind the dialog.
                 renameClickTimer.stop()
                 rootListView.endInlineRename()
+            }
+            function onSelectItemRequested(index) {
+                if (index < 0 || index >= listView.count) return
+                let it = rootListView.controller.model.get(index)
+                listView.currentIndex = index
+                // A reload may already have queued a restoreViewState(); point it
+                // at this row so it agrees instead of pulling the cursor back.
+                rootListView.savedCurrentItemName = (it && it.fileName) ? it.fileName : ""
+                listView.positionViewAtIndex(index, ListView.Contain)
+                listView.forceActiveFocus()
             }
             function onInlineRenameRequested(index) {
                 rootListView.beginInlineRename(index)

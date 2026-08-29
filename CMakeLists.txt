@@ -66,6 +66,7 @@ qt_add_qml_module(appQmlCommander
         qml/components/FilePreviewDialog.qml
         qml/components/NewFolderDialog.qml
         qml/components/ConfirmDeleteDialog.qml
+        qml/components/ConflictDialog.qml
         qml/components/CopyMoveDialog.qml
     RESOURCES
         resources/app_icon.png

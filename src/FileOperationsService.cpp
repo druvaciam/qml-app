@@ -99,8 +99,20 @@ static bool runWindowsShellOp(HWND hwndOwner, ShellOp op, const QStringList &sou
 FileOperationsService::FileOperationsService(QObject *parent)
     : QObject(parent)
 {
+    m_progressTimer.setInterval(80);
+    connect(&m_progressTimer, &QTimer::timeout, this, &FileOperationsService::publishProgress);
+
+    // Anything finishing inside this window never puts a dialog on screen.
+    m_showProgressTimer.setSingleShot(true);
+    m_showProgressTimer.setInterval(400);
+    connect(&m_showProgressTimer, &QTimer::timeout, this, [this]() { setProgressVisible(true); });
+
     connect(&m_futureWatcher, &QFutureWatcher<bool>::finished, this, [this]() {
         bool success = m_futureWatcher.result();
+        m_progressTimer.stop();
+        m_showProgressTimer.stop();
+        publishProgress();
+        setProgressVisible(false);
         setBusy(false);
         setNativeProgress(false);
         // Check success first. A cancel request that arrived too late to stop the
@@ -146,6 +158,14 @@ void FileOperationsService::setNativeProgress(bool native)
     }
 }
 
+void FileOperationsService::setProgressVisible(bool visible)
+{
+    if (m_progressVisible != visible) {
+        m_progressVisible = visible;
+        emit progressVisibleChanged(m_progressVisible);
+    }
+}
+
 void FileOperationsService::setStatusMessage(const QString &msg)
 {
     if (m_statusMessage != msg) {
@@ -156,13 +176,31 @@ void FileOperationsService::setStatusMessage(const QString &msg)
 
 void FileOperationsService::updateProgress(const QString &fileName, int processed, int total)
 {
-    QMetaObject::invokeMethod(this, [this, fileName, processed, total]() {
-        m_currentFileName = fileName;
-        m_processedItems = processed;
-        m_totalItems = total;
-        m_progress = (total > 0) ? (static_cast<double>(processed) / static_cast<double>(total)) : 0.0;
-        emit progressChanged();
-    }, Qt::QueuedConnection);
+    m_workerProcessed.storeRelease(processed);
+    m_workerTotal.storeRelease(total);
+    QMutexLocker locker(&m_workerNameMutex);
+    m_workerFileName = fileName;
+}
+
+void FileOperationsService::publishProgress()
+{
+    const int processed = m_workerProcessed.loadAcquire();
+    const int total = m_workerTotal.loadAcquire();
+    QString name;
+    {
+        QMutexLocker locker(&m_workerNameMutex);
+        name = m_workerFileName;
+    }
+
+    if (processed == m_processedItems && total == m_totalItems && name == m_currentFileName) {
+        return;
+    }
+
+    m_processedItems = processed;
+    m_totalItems = total;
+    m_currentFileName = name;
+    m_progress = (total > 0) ? (static_cast<double>(processed) / static_cast<double>(total)) : 0.0;
+    emit progressChanged();
 }
 
 void FileOperationsService::startOperation(const QString &title, const QString &status, std::function<bool()> work)
@@ -171,11 +209,23 @@ void FileOperationsService::startOperation(const QString &title, const QString &
     setBusy(true);
     setOperationTitle(title);
     setStatusMessage(status);
+    // The total was NOT being cleared, so a new operation briefly showed
+    // "0 of <previous total>" until the worker had finished counting.
+    m_workerProcessed.storeRelease(0);
+    m_workerTotal.storeRelease(0);
+    {
+        QMutexLocker locker(&m_workerNameMutex);
+        m_workerFileName.clear();
+    }
     m_processedItems = 0;
+    m_totalItems = 0;
+    m_currentFileName.clear();
     m_progress = 0.0;
     m_lastError.clear();
     emit progressChanged();
 
+    m_progressTimer.start();
+    m_showProgressTimer.start();
     m_futureWatcher.setFuture(QtConcurrent::run(std::move(work)));
 }
 
@@ -204,6 +254,16 @@ int FileOperationsService::countTotalItems(const QStringList &paths)
         }
     }
     return total;
+}
+
+QList<int> FileOperationsService::countEachPath(const QStringList &paths)
+{
+    QList<int> counts;
+    counts.reserve(paths.size());
+    for (const QString &path : paths) {
+        counts.append(countTotalItems({path}));
+    }
+    return counts;
 }
 
 bool FileOperationsService::copyRecursively(const QString &srcPath, const QString &dstPath,
@@ -294,9 +354,12 @@ bool FileOperationsService::moveRecursively(const QString &srcPath, const QStrin
         return true;
     }
 
-    // Fallback: copy (which swaps the destination in safely) and then delete
+    // Fallback: copy (which swaps the destination in safely) and then delete.
+    // The delete uses a scratch counter: those items were already counted by the
+    // copy, and counting them twice would run the bar past 100%.
     if (copyRecursively(srcPath, dstPath, processed, total, error)) {
-        return deleteRecursively(srcPath, processed, total, error);
+        int scratch = 0;
+        return deleteRecursively(srcPath, scratch, total, error);
     }
     return false;
 }
@@ -345,6 +408,59 @@ bool FileOperationsService::isSamePath(const QString &pathA, const QString &path
 #endif
 }
 
+QStringList FileOperationsService::findConflicts(const QStringList &sourcePaths,
+                                                 const QString &destinationDir, bool isMove)
+{
+    QStringList names;
+    for (const QString &src : sourcePaths) {
+        const QFileInfo srcInfo(src);
+        // A copy into the folder the item already lives in becomes "x - copy",
+        // so it never clashes. A move to the same folder is a no-op.
+        if (isSamePath(srcInfo.absolutePath(), destinationDir)) {
+            continue;
+        }
+        const QString target = QDir::cleanPath(QDir(destinationDir).filePath(srcInfo.fileName()));
+        if (QFileInfo::exists(target)) {
+            names.append(srcInfo.fileName());
+        }
+    }
+    Q_UNUSED(isMove)
+    return names;
+}
+
+bool FileOperationsService::resolveConflicts(QStringList &sourcePaths, const QString &destinationDir,
+                                             bool isMove, int &policy)
+{
+    if (policy != Ask) {
+        // Already answered. Skip drops the clashing items before we start.
+        if (policy == Skip) {
+            const QStringList clashing = findConflicts(sourcePaths, destinationDir, isMove);
+            QStringList kept;
+            for (const QString &src : sourcePaths) {
+                if (!clashing.contains(QFileInfo(src).fileName())) {
+                    kept.append(src);
+                }
+            }
+            sourcePaths = kept;
+            if (sourcePaths.isEmpty()) {
+                emit operationCompleted(true, QStringLiteral("Nothing to do: every item was skipped."));
+                return false;
+            }
+        }
+        return true;
+    }
+
+    const QStringList clashing = findConflicts(sourcePaths, destinationDir, isMove);
+    if (clashing.isEmpty()) {
+        policy = Overwrite; // nothing in the way, the value no longer matters
+        return true;
+    }
+
+    // Hand the decision to the UI and start nothing.
+    emit conflictsFound(clashing, sourcePaths, destinationDir, isMove);
+    return false;
+}
+
 bool FileOperationsService::destinationInsideSource(const QString &sourcePath, const QString &destinationDir)
 {
     QFileInfo si(sourcePath);
@@ -368,13 +484,21 @@ bool FileOperationsService::isPlainFileName(const QString &name)
         && t != QStringLiteral("..");
 }
 
-QString FileOperationsService::generateCopyName(const QString &sourcePath, const QString &destinationDir)
+QString FileOperationsService::generateCopyName(const QString &sourcePath, const QString &destinationDir,
+                                                bool forceUnique)
 {
     QFileInfo srcInfo(sourcePath);
 
-    // If source and destination directories are different, keep original filename
+    // Copying into a different folder keeps the original name, unless the caller
+    // asked for a name that cannot clash (the "Keep both" answer).
     if (!isSamePath(srcInfo.absolutePath(), destinationDir)) {
-        return srcInfo.fileName();
+        if (!forceUnique) {
+            return srcInfo.fileName();
+        }
+        const QString asIs = QDir::cleanPath(QDir(destinationDir).filePath(srcInfo.fileName()));
+        if (!QFileInfo::exists(asIs)) {
+            return srcInfo.fileName();
+        }
     }
 
     // Determine base name and extension
@@ -431,48 +555,59 @@ QString FileOperationsService::generateCopyName(const QString &sourcePath, const
     return candidateName;
 }
 
-void FileOperationsService::copyItems(const QStringList &sourcePaths, const QString &destinationDir)
+void FileOperationsService::copyItems(const QStringList &sourcePaths, const QString &destinationDir,
+                                      int policy)
 {
     if (m_isBusy || sourcePaths.isEmpty() || destinationDir.isEmpty()) return;
     if (!checkNotIntoOwnSubfolder(sourcePaths, destinationDir, QStringLiteral("copy"))) return;
 
+    QStringList sources = sourcePaths;
+#ifndef Q_OS_WIN
+    // Windows gets the shell's own Replace-or-Skip dialog; everywhere else we
+    // have to ask before anything is overwritten.
+    if (!resolveConflicts(sources, destinationDir, false, policy)) return;
+#endif
+
+    m_lastSourcePaths = sources;
+
 #ifdef Q_OS_WIN
     HWND hwnd = GetForegroundWindow();
     setNativeProgress(true);
-    startOperation(QStringLiteral("Copying files..."), QStringLiteral("Preparing copy..."), [this, hwnd, sourcePaths, destinationDir]() {
+    startOperation(QStringLiteral("Copying files..."), QStringLiteral("Preparing copy..."), [this, hwnd, sources, destinationDir, policy]() {
         QString err;
-        bool ok = runWindowsShellOp(hwnd, ShellOp::Copy, sourcePaths, destinationDir, err);
+        bool ok = runWindowsShellOp(hwnd, ShellOp::Copy, sources, destinationDir, err);
         if (!ok && err != QStringLiteral("Operation cancelled by user.")) {
             // Fallback manual copy if shell operation failed
             QMetaObject::invokeMethod(this, [this]() { setNativeProgress(false); }, Qt::QueuedConnection);
             QString fallbackErr;
-            ok = runPortableCopy(sourcePaths, destinationDir, fallbackErr);
+            ok = runPortableCopy(sources, destinationDir, policy, fallbackErr);
             if (!ok) err = fallbackErr.isEmpty() ? err : fallbackErr;
         }
         if (!ok) m_lastError = err;
         return ok;
     });
 #else
-    startOperation(QStringLiteral("Copying files..."), QStringLiteral("Preparing copy..."), [this, sourcePaths, destinationDir]() {
+    startOperation(QStringLiteral("Copying files..."), QStringLiteral("Preparing copy..."), [this, sources, destinationDir, policy]() {
         QString err;
-        bool ok = runPortableCopy(sourcePaths, destinationDir, err);
+        bool ok = runPortableCopy(sources, destinationDir, policy, err);
         if (!ok) m_lastError = err;
         return ok;
     });
 #endif
 }
 
-bool FileOperationsService::runPortableCopy(const QStringList &sourcePaths, const QString &destinationDir, QString &error)
+bool FileOperationsService::runPortableCopy(const QStringList &sourcePaths, const QString &destinationDir,
+                                            int policy, QString &error)
 {
     const int total = countTotalItems(sourcePaths);
-    QMetaObject::invokeMethod(this, [this, total]() { m_totalItems = total; emit progressChanged(); }, Qt::QueuedConnection);
+    m_workerTotal.storeRelease(total);
 
     bool allOk = true;
     int processed = 0;
     for (const QString &src : sourcePaths) {
         if (m_cancelRequested.loadAcquire()) return false;
         QFileInfo srcInfo(src);
-        QString copyName = generateCopyName(src, destinationDir);
+        QString copyName = generateCopyName(src, destinationDir, policy == KeepBoth);
         QString dst = QDir::cleanPath(QDir(destinationDir).filePath(copyName));
         processed++;
         updateProgress(srcInfo.fileName(), processed, total);
@@ -481,36 +616,58 @@ bool FileOperationsService::runPortableCopy(const QStringList &sourcePaths, cons
     return allOk;
 }
 
-void FileOperationsService::moveItems(const QStringList &sourcePaths, const QString &destinationDir)
+void FileOperationsService::moveItems(const QStringList &sourcePaths, const QString &destinationDir,
+                                      int policy)
 {
     if (m_isBusy || sourcePaths.isEmpty() || destinationDir.isEmpty()) return;
     if (!checkNotIntoOwnSubfolder(sourcePaths, destinationDir, QStringLiteral("move"))) return;
 
+    QStringList sources = sourcePaths;
+#ifndef Q_OS_WIN
+    if (!resolveConflicts(sources, destinationDir, true, policy)) return;
+#endif
+
+    m_lastSourcePaths = sources;
+
 #ifdef Q_OS_WIN
     HWND hwnd = GetForegroundWindow();
     setNativeProgress(true);
-    startOperation(QStringLiteral("Moving files..."), QStringLiteral("Preparing move..."), [this, hwnd, sourcePaths, destinationDir]() {
+    startOperation(QStringLiteral("Moving files..."), QStringLiteral("Preparing move..."), [this, hwnd, sources, destinationDir]() {
         QString err;
-        bool ok = runWindowsShellOp(hwnd, ShellOp::Move, sourcePaths, destinationDir, err);
+        bool ok = runWindowsShellOp(hwnd, ShellOp::Move, sources, destinationDir, err);
         if (!ok) m_lastError = err;
         return ok;
     });
 #else
-    startOperation(QStringLiteral("Moving files..."), QStringLiteral("Preparing move..."), [this, sourcePaths, destinationDir]() {
-        const int total = countTotalItems(sourcePaths);
-        QMetaObject::invokeMethod(this, [this, total]() { m_totalItems = total; emit progressChanged(); }, Qt::QueuedConnection);
+    startOperation(QStringLiteral("Moving files..."), QStringLiteral("Preparing move..."), [this, sources, destinationDir, policy]() {
+        const QList<int> counts = countEachPath(sources);
+        int total = 0;
+        for (int c : counts) total += c;
+        m_workerTotal.storeRelease(total);
 
         bool allOk = true;
         int processed = 0;
+        int credited = 0;   // items fully accounted for by finished sources
         QString err;
-        for (const QString &src : sourcePaths) {
+        for (int i = 0; i < sources.size(); ++i) {
             if (m_cancelRequested.loadAcquire()) return false;
+            const QString &src = sources.at(i);
             QFileInfo srcInfo(src);
-            QString dst = QDir::cleanPath(QDir(destinationDir).filePath(srcInfo.fileName()));
-            if (isSamePath(src, dst)) continue;
-            processed++;
+            const QString name = generateCopyName(src, destinationDir, policy == KeepBoth);
+            QString dst = QDir::cleanPath(QDir(destinationDir).filePath(name));
+            if (isSamePath(src, dst)) {
+                credited += counts.at(i);
+                processed = credited;
+                continue;
+            }
             updateProgress(srcInfo.fileName(), processed, total);
             if (!moveRecursively(src, dst, processed, total, err)) allOk = false;
+
+            // A rename moves a whole subtree in one call and advances nothing,
+            // so bring the counter up to where this source ends either way.
+            credited += counts.at(i);
+            if (processed < credited) processed = credited;
+            updateProgress(srcInfo.fileName(), processed, total);
         }
         if (!allOk) m_lastError = err;
         return allOk;
@@ -537,22 +694,27 @@ void FileOperationsService::deleteItems(const QStringList &paths, bool permanent
 {
     if (m_isBusy || paths.isEmpty()) return;
 
+    m_lastSourcePaths = paths;
+
     QString title = permanent ? QStringLiteral("Permanently deleting...") : QStringLiteral("Moving to Recycle Bin...");
     QString status = permanent ? QStringLiteral("Deleting permanently...") : QStringLiteral("Moving to Recycle Bin...");
 
     startOperation(title, status, [this, paths, permanent]() {
-        const int total = countTotalItems(paths);
-        QMetaObject::invokeMethod(this, [this, total]() { m_totalItems = total; emit progressChanged(); }, Qt::QueuedConnection);
+        const QList<int> counts = countEachPath(paths);
+        int total = 0;
+        for (int c : counts) total += c;
+        m_workerTotal.storeRelease(total);
 
         bool allOk = true;
         int processed = 0;
+        int credited = 0;
         QString err;
         QStringList fallbackPaths;
 
-        for (const QString &path : paths) {
+        for (int i = 0; i < paths.size(); ++i) {
             if (m_cancelRequested.loadAcquire()) return false;
+            const QString &path = paths.at(i);
             QFileInfo info(path);
-            processed++;
             updateProgress(info.fileName(), processed, total);
 
             if (permanent) {
@@ -571,10 +733,15 @@ void FileOperationsService::deleteItems(const QStringList &paths, bool permanent
                     }
                 }
             } else {
+                // moveToTrash takes the whole subtree in one call.
                 if (!QFile::moveToTrash(path)) {
                     fallbackPaths.append(path);
                 }
             }
+
+            credited += counts.at(i);
+            if (processed < credited) processed = credited;
+            updateProgress(info.fileName(), processed, total);
         }
 
 #ifdef Q_OS_WIN
@@ -608,17 +775,28 @@ bool FileOperationsService::createDirectory(const QString &parentPath, const QSt
         return false;
     }
 
+    m_lastSourcePaths.clear();
+
     QDir parentDir(parentPath);
     if (!parentDir.exists()) {
         emit operationError(QStringLiteral("Parent directory does not exist."));
         return false;
     }
 
-    bool ok = parentDir.mkdir(dirName.trimmed());
+    const QString name = dirName.trimmed();
+
+    // mkdir just returns false when something is already there, which produced a
+    // "Failed to create folder" that did not say why.
+    if (parentDir.exists(name)) {
+        emit operationError(QStringLiteral("\"%1\" already exists in this folder.").arg(name));
+        return false;
+    }
+
+    bool ok = parentDir.mkdir(name);
     if (ok) {
-        emit operationCompleted(true, QString("Created folder: %1").arg(dirName));
+        emit operationCompleted(true, QStringLiteral("Created folder: %1").arg(name));
     } else {
-        emit operationError(QString("Failed to create folder: %1").arg(dirName));
+        emit operationError(QStringLiteral("Could not create \"%1\" here (permission denied or the name is not allowed).").arg(name));
     }
     return ok;
 }
@@ -653,6 +831,7 @@ bool FileOperationsService::performRename(const QString &oldPath, const QString 
 
 bool FileOperationsService::renameItem(const QString &oldPath, const QString &newName)
 {
+    m_lastSourcePaths.clear();
     QString err;
     bool ok = performRename(oldPath, newName, &err);
     if (ok) {

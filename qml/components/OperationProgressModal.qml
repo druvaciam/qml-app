@@ -10,7 +10,9 @@ Rectangle {
     // On Windows, copy and move run through the shell, which shows its own
     // progress dialog with a Cancel that actually works. Two dialogs at once
     // would be wrong, and ours could not report progress or cancel anything.
-    visible: fileOps.isBusy && !fileOps.nativeProgress
+    // Deliberately progressVisible, not isBusy: a five-file copy finishes in
+    // about 16 ms, and showing a modal for that long is just a flash.
+    visible: fileOps.progressVisible && !fileOps.nativeProgress
     anchors.fill: parent
     color: "#a0000000" // Dim backdrop
     z: 100
@@ -85,8 +87,12 @@ Rectangle {
                         GradientStop { position: 1.0; color: Theme.accentHover }
                     }
 
+                    // Matches the 80 ms publish interval with linear easing, so
+                    // each step completes just as the next arrives. A 150 ms
+                    // OutQuad was being interrupted mid-ease by every update,
+                    // which made the bar advance in uneven lurches.
                     Behavior on width {
-                        NumberAnimation { duration: 150; easing.type: Easing.OutQuad }
+                        NumberAnimation { duration: 80; easing.type: Easing.Linear }
                     }
                 }
             }

@@ -68,7 +68,7 @@ Rectangle {
 
             Rectangle {
                 Layout.fillWidth: true
-                height: 34
+                height: 36
                 radius: Theme.radiusSmall
                 color: Theme.bgInput
                 border.color: Theme.accent
@@ -77,13 +77,20 @@ Rectangle {
                 TextField {
                     id: folderNameInput
                     anchors.fill: parent
-                    anchors.margins: 6
+                    anchors.margins: 1
                     font.family: Theme.fontFamily
                     font.pixelSize: Theme.fontSizeBase
                     color: Theme.textPrimary
                     background: null
                     selectByMouse: true
                     verticalAlignment: TextInput.AlignVCenter
+                    // A TextField carries its own padding on top of the anchor
+                    // margins. With margins of 6 inside a 34px box that left only
+                    // ~10px for 13px glyphs, so they were clipped top and bottom.
+                    topPadding: 0
+                    bottomPadding: 0
+                    leftPadding: 8
+                    rightPadding: 8
 
                     onAccepted: root.confirm()
                     Keys.onEscapePressed: root.close()

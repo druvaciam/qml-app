@@ -25,6 +25,8 @@
 #include <QStringList>
 #include <QFutureWatcher>
 #include <QAtomicInt>
+#include <QMutex>
+#include <QTimer>
 #include <QtQml/qqmlregistration.h>
 
 class FileOperationsService : public QObject
@@ -43,8 +45,28 @@ class FileOperationsService : public QObject
     // True while the operation is being driven by the OS shell, which shows its
     // own progress dialog with a working Cancel. Our modal must stay hidden then.
     Q_PROPERTY(bool nativeProgress READ nativeProgress NOTIFY nativeProgressChanged)
+    // isBusy goes true the instant an operation starts, which is what the guards
+    // need. The dialog must NOT follow it: copying five files takes about 16 ms,
+    // and a modal that appears and disappears inside one frame reads as a violent
+    // flicker. This stays false until the work has lasted long enough to be worth
+    // showing, so short operations show nothing at all.
+    Q_PROPERTY(bool progressVisible READ progressVisible NOTIFY progressVisibleChanged)
 
 public:
+    /**
+     * @brief What to do when the destination already holds a file of that name.
+     * Ask is the default: the service reports the clash and starts nothing, so
+     * the UI can put the choice to the user. Windows never reaches this - the
+     * shell shows its own Replace-or-Skip dialog.
+     */
+    enum ConflictPolicy {
+        Ask = 0,
+        Overwrite,
+        Skip,
+        KeepBoth
+    };
+    Q_ENUM(ConflictPolicy)
+
     explicit FileOperationsService(QObject *parent = nullptr);
     ~FileOperationsService() override;
 
@@ -56,18 +78,29 @@ public:
     int totalItems() const { return m_totalItems; }
     double progress() const { return m_progress; }
     QString statusMessage() const { return m_statusMessage; }
+    /// The source paths of the operation that just finished, whichever entry
+    /// point started it (F5/F6, drag and drop, clipboard, conflict dialog).
+    QStringList lastSourcePaths() const { return m_lastSourcePaths; }
     bool nativeProgress() const { return m_nativeProgress; }
+    bool progressVisible() const { return m_progressVisible; }
 
     /**
      * @brief Asynchronously copy multiple files/directories to destinationDir.
      * Uses Windows Shell IFileOperation on Windows for native progress & UAC elevation.
      */
-    Q_INVOKABLE void copyItems(const QStringList &sourcePaths, const QString &destinationDir);
+    Q_INVOKABLE void copyItems(const QStringList &sourcePaths, const QString &destinationDir,
+                               int policy = Ask);
 
     /**
      * @brief Asynchronously move multiple files/directories to destinationDir.
      */
-    Q_INVOKABLE void moveItems(const QStringList &sourcePaths, const QString &destinationDir);
+    Q_INVOKABLE void moveItems(const QStringList &sourcePaths, const QString &destinationDir,
+                               int policy = Ask);
+
+    /**
+     * @brief Names in sourcePaths that already exist in destinationDir.
+     */
+    static QStringList findConflicts(const QStringList &sourcePaths, const QString &destinationDir, bool isMove);
 
     /**
      * @brief Asynchronously delete items.
@@ -95,7 +128,8 @@ public:
     /**
      * @brief Generate unique copy name when copying into same directory (e.g. "foo - copy.txt", "foo - copy (2).txt").
      */
-    static QString generateCopyName(const QString &sourcePath, const QString &destinationDir);
+    static QString generateCopyName(const QString &sourcePath, const QString &destinationDir,
+                                    bool forceUnique = false);
 
     /**
      * @brief Compare two paths for pointing at the same location.
@@ -127,17 +161,36 @@ signals:
     void progressChanged();
     void statusMessageChanged(const QString &message);
     void nativeProgressChanged(bool native);
+    void progressVisibleChanged(bool visible);
     void operationCompleted(bool success, const QString &message);
     void operationError(const QString &error);
+
+    /**
+     * @brief The destination already holds items with these names; nothing has
+     * started. The UI should ask the user and call back with a policy.
+     */
+    void conflictsFound(const QStringList &names, const QStringList &sourcePaths,
+                        const QString &destinationDir, bool isMove);
 
 private:
     void setBusy(bool busy);
     void setOperationTitle(const QString &title);
     void setStatusMessage(const QString &msg);
     void setNativeProgress(bool native);
-    bool runPortableCopy(const QStringList &sourcePaths, const QString &destinationDir, QString &error);
+    void setProgressVisible(bool visible);
+    bool runPortableCopy(const QStringList &sourcePaths, const QString &destinationDir,
+                         int policy, QString &error);
+    /// Applies Ask/Skip up front. Returns false when the caller should stop.
+    bool resolveConflicts(QStringList &sourcePaths, const QString &destinationDir,
+                          bool isMove, int &policy);
     bool checkNotIntoOwnSubfolder(const QStringList &sourcePaths, const QString &destinationDir, const QString &verb);
+    /// Called from the worker thread. Only records the numbers; the GUI thread
+    /// publishes them on a timer. Queuing one cross-thread call per file floods
+    /// the event loop, so the values arrive late, in bursts, and stale ones from
+    /// a finished operation can land after the next one has started.
     void updateProgress(const QString &fileName, int processed, int total);
+    /// GUI thread: copy the worker's latest numbers into the exposed properties.
+    void publishProgress();
     void startOperation(const QString &title, const QString &status, std::function<bool()> work);
 
     // processed/total/error are worker-thread locals passed down the recursion.
@@ -149,6 +202,10 @@ private:
                          int &processed, int total, QString &error);
     bool deleteRecursively(const QString &path, int &processed, int total, QString &error);
     int countTotalItems(const QStringList &paths);
+    /// How many items each path contains, counted the same way as
+    /// countTotalItems. Lets an operation credit a whole subtree at once when it
+    /// was moved by a single rename rather than walked file by file.
+    QList<int> countEachPath(const QStringList &paths);
 
     bool m_isBusy = false;
     QString m_operationTitle;
@@ -158,8 +215,16 @@ private:
     double m_progress = 0.0;
     QString m_statusMessage;
     QString m_lastError;
+    QStringList m_lastSourcePaths;
     bool m_nativeProgress = false;
+    bool m_progressVisible = false;
+    QTimer m_showProgressTimer;
 
     QAtomicInt m_cancelRequested{0};
+    QAtomicInt m_workerProcessed{0};
+    QAtomicInt m_workerTotal{0};
+    QMutex m_workerNameMutex;
+    QString m_workerFileName;
+    QTimer m_progressTimer;
     QFutureWatcher<bool> m_futureWatcher;
 };

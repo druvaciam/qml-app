@@ -108,6 +108,14 @@ AppController::AppController(QObject *parent)
     connect(m_fileOps, &FileOperationsService::operationCompleted,
             this, &AppController::onFileOperationCompleted);
 
+    // Nothing was listening to this, so every error it reported was swallowed -
+    // a New Folder that clashed with an existing name simply closed and did
+    // nothing visible.
+    connect(m_fileOps, &FileOperationsService::operationError, this,
+            [this](const QString &error) {
+                emit showMessageRequested(QStringLiteral("Operation Failed"), error);
+            });
+
     connect(QGuiApplication::clipboard(), &QClipboard::dataChanged,
             this, &AppController::clipboardChanged);
 }
@@ -440,10 +448,16 @@ void AppController::deleteSelected(const QStringList &customPaths, bool permanen
 
 bool AppController::createFolder(const QString &folderName)
 {
-    QString activePath = activePanel()->currentPath();
-    bool ok = m_fileOps->createDirectory(activePath, folderName);
+    PanelController *panel = activePanel();
+    if (!panel) return false;
+
+    const QString activePath = panel->currentPath();
+    const bool ok = m_fileOps->createDirectory(activePath, folderName);
     if (ok) {
-        activePanel()->refresh();
+        panel->refresh();
+        // Leave the cursor on the folder that was just made, the same as
+        // clicking it would.
+        panel->selectItemByName(folderName.trimmed());
     }
     return ok;
 }
@@ -476,6 +490,21 @@ void AppController::openTerminalInActivePanel()
 
 void AppController::onFileOperationCompleted(bool success, const QString &message)
 {
+    // Total Commander treats marked files as a to-do list: a successful
+    // operation consumes the marks, a failed one leaves them so the user can
+    // retry without picking everything out again.
+    if (success) {
+        const QStringList done = m_fileOps->lastSourcePaths();
+        if (!done.isEmpty()) {
+            if (m_leftPanel && m_leftPanel->model()) {
+                m_leftPanel->model()->deselectPaths(done);
+            }
+            if (m_rightPanel && m_rightPanel->model()) {
+                m_rightPanel->model()->deselectPaths(done);
+            }
+        }
+    }
+
     refreshAll();
     if (!success && !message.isEmpty()) {
         emit showMessageRequested(QStringLiteral("Operation Failed"), message);

@@ -132,6 +132,10 @@ public:
     Q_INVOKABLE void endRightDragSelection();
     Q_INVOKABLE void selectAll();
     Q_INVOKABLE void deselectAll();
+    /// Unmark exactly these paths, leaving every other mark alone. Used after a
+    /// successful operation so its source files stop being marked, the way
+    /// Total Commander behaves.
+    Q_INVOKABLE void deselectPaths(const QStringList &paths);
     Q_INVOKABLE void invertSelection();
     Q_INVOKABLE QStringList getSelectedPaths() const;
     Q_INVOKABLE QString getSelectedSummary() const;

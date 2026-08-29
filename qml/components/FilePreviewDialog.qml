@@ -448,5 +448,13 @@ Rectangle {
         }
     }
 
-    Keys.onEscapePressed: (event) => { root.close(); event.accepted = true }
+    // Consume anything the editor did not take, so keys cannot reach the file
+    // list behind this dialog. The TextArea handles Enter itself in edit mode,
+    // so newlines still work there.
+    Keys.onPressed: (event) => {
+        if (event.key === Qt.Key_Escape) {
+            root.close()
+        }
+        event.accepted = true
+    }
 }
