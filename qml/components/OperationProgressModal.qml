@@ -102,6 +102,10 @@ Rectangle {
                 Layout.fillWidth: true
 
                 Text {
+                    // Hidden while the Windows shell is driving: its numbers are
+                    // work units, roughly two per file, not a count of items.
+                    // The percentage is still meaningful because it is a ratio.
+                    visible: root.fileOps.progressIsItemCount
                     text: root.fileOps.totalItems > 0 ?
                           root.fileOps.processedItems + " of " + root.fileOps.totalItems + " items" :
                           "Scanning files..."

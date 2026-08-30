@@ -52,6 +52,10 @@ class FileOperationsService : public QObject
     // flicker. This stays false until the work has lasted long enough to be worth
     // showing, so short operations show nothing at all.
     Q_PROPERTY(bool progressVisible READ progressVisible NOTIFY progressVisibleChanged)
+    // True when processedItems/totalItems are a real count of files. The Windows
+    // shell reports progress in its own opaque work units - roughly two per file
+    // - so those numbers must not be shown as "items" when they come from it.
+    Q_PROPERTY(bool progressIsItemCount READ progressIsItemCount NOTIFY progressIsItemCountChanged)
 
 public:
     /**
@@ -84,6 +88,7 @@ public:
     QStringList lastSourcePaths() const { return m_lastSourcePaths; }
     bool nativeProgress() const { return m_nativeProgress; }
     bool progressVisible() const { return m_progressVisible; }
+    bool progressIsItemCount() const { return m_progressIsItemCount; }
 
     /**
      * @brief Asynchronously copy multiple files/directories to destinationDir.
@@ -163,6 +168,7 @@ signals:
     void statusMessageChanged(const QString &message);
     void nativeProgressChanged(bool native);
     void progressVisibleChanged(bool visible);
+    void progressIsItemCountChanged(bool isCount);
     void operationCompleted(bool success, const QString &message);
     void operationError(const QString &error);
 
@@ -179,6 +185,7 @@ private:
     void setStatusMessage(const QString &msg);
     void setNativeProgress(bool native);
     void setProgressVisible(bool visible);
+    void setProgressIsItemCount(bool isCount);
     bool runPortableCopy(const QStringList &sourcePaths, const QString &destinationDir,
                          int policy, QString &error);
     /// Applies Ask/Skip up front. Returns false when the caller should stop.
@@ -219,6 +226,7 @@ private:
     QStringList m_lastSourcePaths;
     bool m_nativeProgress = false;
     bool m_progressVisible = false;
+    bool m_progressIsItemCount = true;
     QTimer m_showProgressTimer;
 
     QAtomicInt m_cancelRequested{0};

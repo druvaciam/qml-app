@@ -284,6 +284,14 @@ void FileOperationsService::setProgressVisible(bool visible)
     }
 }
 
+void FileOperationsService::setProgressIsItemCount(bool isCount)
+{
+    if (m_progressIsItemCount != isCount) {
+        m_progressIsItemCount = isCount;
+        emit progressIsItemCountChanged(m_progressIsItemCount);
+    }
+}
+
 void FileOperationsService::setStatusMessage(const QString &msg)
 {
     if (m_statusMessage != msg) {
@@ -708,12 +716,14 @@ void FileOperationsService::copyItems(const QStringList &sourcePaths, const QStr
 
 #ifdef Q_OS_WIN
     HWND hwnd = GetForegroundWindow();
+    setProgressIsItemCount(false);
     startOperation(QStringLiteral("Copying files..."), QStringLiteral("Preparing copy..."), [this, hwnd, sources, destinationDir, policy]() {
         QString err;
         auto reporter = [this](const QString &name, int done, int total) { updateProgress(name, done, total); };
         bool ok = runWindowsShellOp(hwnd, ShellOp::Copy, sources, destinationDir, err, policy, reporter);
         if (!ok && err != QStringLiteral("Operation cancelled by user.")) {
             // Fallback manual copy if shell operation failed
+            QMetaObject::invokeMethod(this, [this]() { setProgressIsItemCount(true); }, Qt::QueuedConnection);
             QString fallbackErr;
             ok = runPortableCopy(sources, destinationDir, policy, fallbackErr);
             if (!ok) err = fallbackErr.isEmpty() ? err : fallbackErr;
@@ -722,6 +732,7 @@ void FileOperationsService::copyItems(const QStringList &sourcePaths, const QStr
         return ok;
     });
 #else
+    setProgressIsItemCount(true);
     startOperation(QStringLiteral("Copying files..."), QStringLiteral("Preparing copy..."), [this, sources, destinationDir, policy]() {
         QString err;
         bool ok = runPortableCopy(sources, destinationDir, policy, err);
@@ -765,6 +776,7 @@ void FileOperationsService::moveItems(const QStringList &sourcePaths, const QStr
 
 #ifdef Q_OS_WIN
     HWND hwnd = GetForegroundWindow();
+    setProgressIsItemCount(false);
     startOperation(QStringLiteral("Moving files..."), QStringLiteral("Preparing move..."), [this, hwnd, sources, destinationDir, policy]() {
         QString err;
         auto reporter = [this](const QString &name, int done, int total) { updateProgress(name, done, total); };
@@ -773,6 +785,7 @@ void FileOperationsService::moveItems(const QStringList &sourcePaths, const QStr
         return ok;
     });
 #else
+    setProgressIsItemCount(true);
     startOperation(QStringLiteral("Moving files..."), QStringLiteral("Preparing move..."), [this, sources, destinationDir, policy]() {
         const QList<int> counts = countEachPath(sources);
         int total = 0;
@@ -834,6 +847,7 @@ void FileOperationsService::deleteItems(const QStringList &paths, bool permanent
     QString title = permanent ? QStringLiteral("Permanently deleting...") : QStringLiteral("Moving to Recycle Bin...");
     QString status = permanent ? QStringLiteral("Deleting permanently...") : QStringLiteral("Moving to Recycle Bin...");
 
+    setProgressIsItemCount(true);
     startOperation(title, status, [this, paths, permanent]() {
         const QList<int> counts = countEachPath(paths);
         int total = 0;

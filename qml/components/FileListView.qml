@@ -156,6 +156,51 @@ Item {
         longPressTimer.start()
     }
 
+    // Keeps a right-drag selection moving while the pointer is held outside the
+    // list. onPositionChanged only fires when the mouse actually moves, so
+    // holding it below the last row used to stop the selection dead.
+    Timer {
+        id: dragScrollTimer
+        interval: 50
+        repeat: true
+        property int direction: 0     // -1 up, +1 down, 0 idle
+        property real overshoot: 0    // pixels beyond the edge, sets the speed
+        onTriggered: {
+            if (direction === 0) { stop(); return }
+            // Further out means faster, the way a text selection behaves.
+            let rows = Math.max(1, Math.min(10, Math.floor(overshoot / 12)))
+            let next = Math.max(0, Math.min(listView.count - 1,
+                                            listView.currentIndex + direction * rows))
+            if (next === listView.currentIndex) { stop(); return }  // already at the end
+            rootListView.applyRightDragTo(next)
+        }
+    }
+
+    /// Called as the pointer moves during a right-drag. viewY is in listView
+    /// coordinates, so it is negative above the list and > height below it.
+    function updateRightDragAutoScroll(viewY) {
+        if (viewY < 0) {
+            dragScrollTimer.direction = -1
+            dragScrollTimer.overshoot = -viewY
+        } else if (viewY > listView.height) {
+            dragScrollTimer.direction = 1
+            dragScrollTimer.overshoot = viewY - listView.height
+        } else {
+            dragScrollTimer.direction = 0
+        }
+
+        if (dragScrollTimer.direction === 0) {
+            dragScrollTimer.stop()
+        } else if (!dragScrollTimer.running) {
+            dragScrollTimer.start()
+        }
+    }
+
+    function stopDragAutoScroll() {
+        dragScrollTimer.stop()
+        dragScrollTimer.direction = 0
+    }
+
     /// Extend a right-drag selection to targetIdx.
     ///
     /// Deliberately a function on this item rather than inline in the delegate.
@@ -456,25 +501,15 @@ Item {
         anchors.bottom: parent.bottom
         anchors.left: parent.left
         anchors.right: parent.right
-        acceptedButtons: Qt.LeftButton | Qt.RightButton
+        acceptedButtons: Qt.LeftButton   // right button is handled by rightArea
         z: 0
 
         onPressed: (mouse) => {
             rootListView.endInlineRename()
             rootListView.controller.activate()
             listView.forceActiveFocus()
-            if (mouse.button === Qt.RightButton) {
-                rootListView.armLongPress(mapToGlobal(mouse.x, mouse.y), -1)
-            }
         }
 
-        onReleased: (mouse) => {
-            if (mouse.button === Qt.RightButton) {
-                rootListView.releaseLongPress(mapToGlobal(mouse.x, mouse.y))
-            }
-        }
-
-        onCanceled: rootListView.cancelLongPress()
     }
 
     // Drag and Drop Area for receiving drops from external sources (e.g. Windows Explorer)
@@ -552,6 +587,114 @@ Item {
         }
     }
 
+    // Every right-button interaction lives here, at the view level, NOT in the
+    // row delegate.
+    //
+    // A delegate is destroyed the instant its row scrolls out of view. The
+    // right-drag used to run from the delegate the drag started on, so extending
+    // the selection scrolled the list, which recycled that row, which destroyed
+    // the MouseArea and killed the mouse grab. The drag therefore died the moment
+    // the starting row left the screen - "scrolls a little then stops". This area
+    // is a child of the view and survives any amount of scrolling.
+    MouseArea {
+        id: rightArea
+        anchors.top: headerRow.bottom
+        anchors.bottom: parent.bottom
+        anchors.left: parent.left
+        anchors.right: parent.right
+        acceptedButtons: Qt.RightButton   // left events fall through untouched
+        preventStealing: true
+        z: 20
+
+        property int pressIndex: -1
+        property real pressY: 0
+        property bool dragging: false
+
+        /// Row under a point in this area's coordinates, or -1 for empty space.
+        function rowAt(viewX, viewY) {
+            let cp = mapToItem(listView.contentItem, viewX, viewY)
+            let x = Math.max(10, Math.min(listView.width - 10, cp.x))
+            return listView.indexAt(x, cp.y)
+        }
+
+        /// Same, but clamped to the ends. While dragging, a pointer past the last
+        /// row means "extend to the end" rather than "nothing here".
+        function dragRowAt(viewX, viewY) {
+            let idx = rowAt(viewX, viewY)
+            if (idx !== -1) return idx
+            let cp = mapToItem(listView.contentItem, viewX, viewY)
+            return (cp.y <= 0) ? 0 : listView.count - 1
+        }
+
+        onPressed: (mouse) => {
+            rootListView.endInlineRename()
+            rootListView.controller.activate()
+            listView.forceActiveFocus()
+
+            pressY = mouse.y
+            dragging = false
+            pressIndex = rowAt(mouse.x, mouse.y)
+            if (pressIndex >= 0) {
+                listView.currentIndex = pressIndex
+            }
+            rootListView.armLongPress(mapToGlobal(mouse.x, mouse.y), pressIndex)
+        }
+
+        onPositionChanged: (mouse) => {
+            if (!dragging) {
+                if (Math.abs(mouse.y - pressY) <= 6) return
+                rootListView.cancelLongPress()
+                dragging = true
+                // Starting past the last row anchors on the last row.
+                let anchor = (pressIndex >= 0) ? pressIndex : dragRowAt(mouse.x, pressY)
+                rootListView.controller.model.beginRightDragSelection(
+                    anchor, (mouse.modifiers & Qt.ShiftModifier) !== 0)
+            }
+            // Keep going while the pointer is held outside the list, even if it
+            // stops moving - no further mouse events arrive in that case.
+            rootListView.updateRightDragAutoScroll(mouse.y)
+
+            // Exactly one thing may drive the selection at a time. Outside the
+            // list the timer owns it, stepping from the current row; inside, the
+            // pointer owns it. Letting both run meant the timer stepped from
+            // currentIndex while the mouse snapped to the row under the cursor,
+            // and the two targets disagreed - which is the jumping up and down.
+            if (mouse.y < 0 || mouse.y > height) {
+                return
+            }
+            let idx = dragRowAt(mouse.x, mouse.y)
+            if (idx >= 0) rootListView.applyRightDragTo(idx)
+        }
+
+        onReleased: (mouse) => {
+            rootListView.stopDragAutoScroll()
+            if (dragging) {
+                dragging = false
+                rootListView.controller.model.endRightDragSelection()
+                return
+            }
+            if (rootListView.longPressPending()) {
+                if (pressIndex >= 0) {
+                    // Short right click toggles the row, classic Commander style.
+                    rootListView.cancelLongPress()
+                    rootListView.controller.model.toggleSelection(pressIndex)
+                } else {
+                    // Empty space below the rows: show the folder context menu.
+                    rootListView.releaseLongPress(mapToGlobal(mouse.x, mouse.y))
+                }
+            }
+        }
+
+        onCanceled: {
+            rootListView.stopDragAutoScroll()
+            rootListView.cancelLongPress()
+            if (dragging) {
+                dragging = false
+                rootListView.controller.model.endRightDragSelection()
+            }
+        }
+    }
+
     // File List
     ListView {
         id: listView
@@ -602,25 +745,15 @@ Item {
             MouseArea {
                 id: footerMouseArea
                 anchors.fill: parent
-                acceptedButtons: Qt.LeftButton | Qt.RightButton
+                acceptedButtons: Qt.LeftButton   // right button is handled by rightArea
                 preventStealing: true
 
                 onPressed: (mouse) => {
                     rootListView.endInlineRename()
                     rootListView.controller.activate()
                     listView.forceActiveFocus()
-                    if (mouse.button === Qt.RightButton) {
-                        rootListView.armLongPress(mapToGlobal(mouse.x, mouse.y), -1)
-                    }
                 }
 
-                onReleased: (mouse) => {
-                    if (mouse.button === Qt.RightButton) {
-                        rootListView.releaseLongPress(mapToGlobal(mouse.x, mouse.y))
-                    }
-                }
-
-                onCanceled: rootListView.cancelLongPress()
             }
         }
 
@@ -631,7 +764,7 @@ Item {
             y: listView.contentHeight
             width: listView.width
             height: Math.max(listView.height, listView.contentHeight + 2000) - listView.contentHeight
-            acceptedButtons: Qt.LeftButton | Qt.RightButton
+            acceptedButtons: Qt.LeftButton   // right button is handled by rightArea
             preventStealing: true
             z: 0
 
@@ -640,18 +773,8 @@ Item {
                 rootListView.endInlineRename()
                 rootListView.controller.activate()
                 listView.forceActiveFocus()
-                if (mouse.button === Qt.RightButton) {
-                    rootListView.armLongPress(mapToGlobal(mouse.x, mouse.y), -1)
-                }
             }
 
-            onReleased: (mouse) => {
-                if (mouse.button === Qt.RightButton) {
-                    rootListView.releaseLongPress(mapToGlobal(mouse.x, mouse.y))
-                }
-            }
-
-            onCanceled: rootListView.cancelLongPress()
         }
 
         delegate: Rectangle {
@@ -672,7 +795,7 @@ Item {
                 id: rowMouse
                 anchors.fill: parent
                 hoverEnabled: true
-                acceptedButtons: Qt.LeftButton | Qt.RightButton
+                acceptedButtons: Qt.LeftButton   // right button is handled by rightArea
                 preventStealing: true
                 z: 5
                 enabled: rootListView.editingIndex !== index
@@ -689,8 +812,6 @@ Item {
                 // onDoubleClicked had just stopped, and the editor opens behind
                 // whatever the double click opened.
                 property bool suppressRenameOnRelease: false
-                property int rightPressIndex: -1
-                property bool isRightDragging: false
 
                 onPressed: (mouse) => {
                     suppressRenameOnRelease = false
@@ -715,12 +836,7 @@ Item {
                     rootListView.controller.activate()
                     listView.forceActiveFocus()
 
-                    if (mouse.button === Qt.RightButton) {
-                        renameClickTimer.stop()
-                        rightPressIndex = index
-                        isRightDragging = false
-                        rootListView.armLongPress(mapToGlobal(mouse.x, mouse.y), index)
-                    } else if (mouse.button === Qt.LeftButton) {
+                    if (mouse.button === Qt.LeftButton) {
                         if (mouse.modifiers & Qt.ShiftModifier) {
                             renameClickTimer.stop()
                             let anchor = (rootListView.selectionAnchorIndex >= 0) ? rootListView.selectionAnchorIndex : prevIndex
@@ -744,29 +860,7 @@ Item {
 
                 onPositionChanged: (mouse) => {
                     let pt = rowMouse.mapToItem(null, mouse.x, mouse.y)
-                    if (mouse.buttons & Qt.RightButton) {
-                        let dx = Math.abs(mouse.x - lastPressX)
-                        let dy = Math.abs(mouse.y - lastPressY)
-                        if (!isRightDragging && (dx > 6 || dy > 6)) {
-                            rootListView.cancelLongPress()
-                            isRightDragging = true
-                            rootListView.controller.model.beginRightDragSelection(rightPressIndex, (mouse.modifiers & Qt.ShiftModifier) !== 0)
-                        }
-                        if (isRightDragging) {
-                            let contentPos = rowMouse.mapToItem(listView.contentItem, mouse.x, mouse.y)
-                            let clampedX = Math.max(10, Math.min(listView.width - 10, contentPos.x))
-                            let targetIdx = listView.indexAt(clampedX, contentPos.y)
-                            if (targetIdx === -1) {
-                                if (contentPos.y <= 0) targetIdx = 0
-                                else if (contentPos.y >= listView.contentHeight) targetIdx = listView.count - 1
-                                else targetIdx = Math.max(0, Math.min(listView.count - 1, Math.floor(contentPos.y / Theme.rowHeight)))
-                            }
-                            // Nothing may touch this delegate after the call:
-                            // it may no longer exist when the call returns.
-                            rootListView.applyRightDragTo(targetIdx)
-                            return
-                        }
-                    } else if (isDragActive) {
+                    if (isDragActive) {
                         window.updateGlobalDrag(pt.x, pt.y, mouse.modifiers)
                     } else if (!isParent && (mouse.buttons & Qt.LeftButton)) {
                         let dx = Math.abs(pt.x - pressRootX)
@@ -793,18 +887,7 @@ Item {
                         window.endGlobalDrag(pt.x, pt.y, mouse.modifiers)
                         return
                     }
-                    if (mouse.button === Qt.RightButton) {
-                        if (isRightDragging) {
-                            isRightDragging = false
-                            rootListView.controller.model.endRightDragSelection()
-                            return
-                        }
-                        if (rootListView.longPressPending()) {
-                            rootListView.cancelLongPress()
-                            // Short right click: toggle selection (classic Commander style)
-                            rootListView.controller.model.toggleSelection(index)
-                        }
-                    } else if (mouse.button === Qt.LeftButton) {
+                    if (mouse.button === Qt.LeftButton) {
                         if (mouse.modifiers & Qt.ControlModifier) {
                             if (pressedOnAlreadySelected) {
                                 // User pressed Ctrl on already-selected item and released without dragging: toggle off
@@ -822,12 +905,7 @@ Item {
                 }
 
                 onCanceled: {
-                    rootListView.cancelLongPress()
                     renameClickTimer.stop()
-                    if (isRightDragging) {
-                        isRightDragging = false
-                        rootListView.controller.model.endRightDragSelection()
-                    }
                     if (isDragActive) {
                         isDragActive = false
                         window.cancelGlobalDrag()

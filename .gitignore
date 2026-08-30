@@ -60,3 +60,21 @@ venv.bak/
 
 # Logs
 log.txt
+
+# Visual Studio & IDE files
+.vs/
+*.user
+*.userosv
+*.suo
+*.userprefs
+*.sln.docstates
+*.VC.db
+*.opendb
+CMakeUserPresets.json
+x64/
+x86/
+ARM/
+ARM64/
+Debug/
+Release/
+
