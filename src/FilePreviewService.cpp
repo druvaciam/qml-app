@@ -206,7 +206,12 @@ bool FilePreviewService::saveTextFile(const QString &filePath, const QString &co
         file.cancelWriting();
         return false;
     }
-    return file.commit();
+    if (!file.commit()) {
+        return false;
+    }
+
+    emit fileSaved(filePath);
+    return true;
 }
 
 bool FilePreviewService::openInDefaultApp(const QString &filePath)

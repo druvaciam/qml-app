@@ -114,6 +114,15 @@ public:
     Q_INVOKABLE void refresh();
 
     /**
+     * @brief Re-read one file's size, date and permissions in place.
+     *
+     * Saving a file changes exactly one row. A full refresh() re-stats every
+     * entry in the folder on the GUI thread, which visibly freezes the window
+     * on a large directory (see the async-load finding). This touches one row.
+     */
+    Q_INVOKABLE void refreshItem(const QString &filePath);
+
+    /**
      * @brief Hold back file-watcher reloads (not explicit ones).
      * A reload resets the model, which destroys and rebuilds every delegate. If
      * that happens while a row is being renamed, the editor is torn down under

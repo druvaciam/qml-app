@@ -32,6 +32,8 @@
 #include "FileListModel.h"
 #include "DriveInfo.h"
 
+class FileOperationsService;
+
 class PanelController : public QObject
 {
     Q_OBJECT
@@ -140,6 +142,16 @@ public:
     Q_INVOKABLE bool renameItem(const QString &oldPath, const QString &newName);
 
     /**
+     * @brief Give this panel the shared operations service.
+     *
+     * Renaming used to call the static performRename() directly, which reports
+     * nothing: a rename that failed left the old name in place with no message.
+     * Going through the service means failures arrive as operationError, which
+     * AppController already shows.
+     */
+    void setFileOperations(FileOperationsService *ops) { m_fileOps = ops; }
+
+    /**
      * @brief Return list of file paths to drag for item at index (or all selected items if index is selected).
      */
     Q_INVOKABLE QStringList getDragPaths(int index) const;
@@ -171,6 +183,7 @@ private:
     void updateCurrentDriveInfo();
 
     FileListModel *m_model = nullptr;
+    FileOperationsService *m_fileOps = nullptr;
     QStringList m_history;
     int m_historyIndex = -1;
     int m_currentIndex = 0;

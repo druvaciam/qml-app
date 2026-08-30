@@ -178,6 +178,50 @@ void FileListModel::setFilterPattern(const QString &pattern)
     }
 }
 
+void FileListModel::refreshItem(const QString &filePath)
+{
+    if (filePath.isEmpty() || m_items.isEmpty()) {
+        return;
+    }
+
+    auto key = [](const QString &p) {
+#ifdef Q_OS_WIN
+        return QDir::cleanPath(p).toLower();
+#else
+        return QDir::cleanPath(p);
+#endif
+    };
+    const QString wanted = key(filePath);
+
+    for (int i = 0; i < static_cast<int>(m_items.size()); ++i) {
+        if (key(m_items[i].fullPath) != wanted) {
+            continue;
+        }
+
+        const QFileInfo info(m_items[i].fullPath);
+        if (!info.exists()) {
+            // Gone rather than changed; leave it to the watcher's reload.
+            return;
+        }
+
+        FileItem &item = m_items[i];
+        item.size = item.isDir ? 0 : info.size();
+        item.formattedSize = formatSize(item.size, item.isDir);
+        item.lastModified = info.lastModified();
+        item.formattedModified = item.lastModified.toString(QStringLiteral("yyyy-MM-dd HH:mm"));
+        item.permissions = formatPermissions(info);
+
+        const QModelIndex idx = index(i, 0);
+        emit dataChanged(idx, idx, {SizeRole, FormattedSizeRole, ModifiedRole,
+                                    FormattedModifiedRole, PermissionsRole});
+        // The status bar totals the size of marked items, so they can change too.
+        if (item.isSelected) {
+            updateSelectionStats();
+        }
+        return;
+    }
+}
+
 void FileListModel::refresh()
 {
     m_reloadTimer.stop();

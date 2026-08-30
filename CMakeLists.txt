@@ -83,6 +83,7 @@ target_link_libraries(appQmlCommander PRIVATE
 )
 
 if(WIN32)
+    add_compile_definitions(NOMINMAX)
     target_link_libraries(appQmlCommander PRIVATE ole32 shell32 uuid comctl32)
     if(NOT DEFINED CMAKE_WIN32_EXECUTABLE)
         if(CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")

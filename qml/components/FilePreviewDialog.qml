@@ -66,6 +66,8 @@ Rectangle {
             return false
         }
         saveError = ""
+        // The panels update themselves: FilePreviewService emits fileSaved and
+        // AppController refreshes that one row.
         if (closeAfter) {
             close()
         } else {
@@ -87,6 +89,20 @@ Rectangle {
         sequences: [StandardKey.Save]
         enabled: root.canSave
         onActivated: root.save(false)
+    }
+
+    // Escape as a Shortcut, not a key handler.
+    //
+    // Key handlers only fire for whichever item happens to hold focus, and this
+    // dialog moves focus around: opening in edit mode focuses the editor, and
+    // Ctrl+S focuses it again so typing can continue. Every attempt to place the
+    // handler where the key would arrive missed a case. A Shortcut is
+    // window-level and fires no matter what has focus - the same reason Ctrl+S
+    // has always worked reliably here.
+    Shortcut {
+        sequences: [StandardKey.Cancel]   // Escape
+        enabled: root.isOpen
+        onActivated: root.close()
     }
 
     function close() {
@@ -255,6 +271,15 @@ Rectangle {
                             radius: Theme.radiusSmall
                         }
                         wrapMode: TextArea.WrapAnywhere
+
+                        // Escape is handled here rather than relying on the key
+                        // bubbling out through ScrollView to the root. Ctrl+S
+                        // ends by focusing this editor, and once focus was in
+                        // here Escape stopped reaching the root's handler.
+                        Keys.onEscapePressed: (event) => {
+                            root.close()
+                            event.accepted = true
+                        }
                     }
                 }
 

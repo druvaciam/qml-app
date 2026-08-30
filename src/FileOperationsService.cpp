@@ -14,6 +14,7 @@
 enum class ShellOp { Copy, Move, Delete, Trash, Rename };
 
 using ShellReporter = std::function<void(const QString &, int, int)>;
+using ShellCancelCheck = std::function<bool()>;
 
 /**
  * Receives progress from IFileOperation so the app can draw its own dialog.
@@ -26,7 +27,8 @@ using ShellReporter = std::function<void(const QString &, int, int)>;
 class ShellProgressSink final : public IFileOperationProgressSink
 {
 public:
-    explicit ShellProgressSink(ShellReporter reporter) : m_report(std::move(reporter)) {}
+    ShellProgressSink(ShellReporter reporter, ShellCancelCheck cancelled)
+        : m_report(std::move(reporter)), m_cancelled(std::move(cancelled)) {}
 
     IFACEMETHODIMP QueryInterface(REFIID riid, void **ppv) override
     {
@@ -52,7 +54,7 @@ public:
         m_total = static_cast<int>(workTotal);
         m_soFar = static_cast<int>(workSoFar);
         m_report(m_current, m_soFar, m_total);
-        return S_OK;
+        return abortIfCancelled();
     }
 
     IFACEMETHODIMP PostCopyItem(DWORD, IShellItem *item, IShellItem *, LPCWSTR, HRESULT, IShellItem *) override
@@ -67,9 +69,12 @@ public:
     IFACEMETHODIMP FinishOperations(HRESULT) override { return S_OK; }
     IFACEMETHODIMP PreRenameItem(DWORD, IShellItem *, LPCWSTR) override { return S_OK; }
     IFACEMETHODIMP PostRenameItem(DWORD, IShellItem *, LPCWSTR, HRESULT, IShellItem *) override { return S_OK; }
-    IFACEMETHODIMP PreMoveItem(DWORD, IShellItem *, IShellItem *, LPCWSTR) override { return S_OK; }
-    IFACEMETHODIMP PreCopyItem(DWORD, IShellItem *, IShellItem *, LPCWSTR) override { return S_OK; }
-    IFACEMETHODIMP PreDeleteItem(DWORD, IShellItem *) override { return S_OK; }
+    // Returning a failure from a Pre* callback stops IFileOperation. This is the
+    // only way to cancel it: the service's cancel flag is not something the shell
+    // ever looks at, so before this the Cancel button did nothing at all.
+    IFACEMETHODIMP PreMoveItem(DWORD, IShellItem *, IShellItem *, LPCWSTR) override { return abortIfCancelled(); }
+    IFACEMETHODIMP PreCopyItem(DWORD, IShellItem *, IShellItem *, LPCWSTR) override { return abortIfCancelled(); }
+    IFACEMETHODIMP PreDeleteItem(DWORD, IShellItem *) override { return abortIfCancelled(); }
     IFACEMETHODIMP PreNewItem(DWORD, IShellItem *, LPCWSTR) override { return S_OK; }
     IFACEMETHODIMP PostNewItem(DWORD, IShellItem *, LPCWSTR, LPCWSTR, DWORD, HRESULT, IShellItem *) override { return S_OK; }
     IFACEMETHODIMP ResetTimer() override { return S_OK; }
@@ -77,6 +82,11 @@ public:
     IFACEMETHODIMP ResumeTimer() override { return S_OK; }
 
 private:
+    HRESULT abortIfCancelled() const
+    {
+        return (m_cancelled && m_cancelled()) ? E_ABORT : S_OK;
+    }
+
     void noteItem(IShellItem *item)
     {
         if (item) {
@@ -91,13 +101,15 @@ private:
 
     LONG m_ref = 1;
     ShellReporter m_report;
+    ShellCancelCheck m_cancelled;
     QString m_current;
     int m_total = 0;
     int m_soFar = 0;
 };
 
 static bool runWindowsShellOp(HWND hwndOwner, ShellOp op, const QStringList &sources, const QString &destDir,
-                              QString &errorMessage, int policy = 0, ShellReporter reporter = {})
+                              QString &errorMessage, int policy = 0, ShellReporter reporter = {},
+                              ShellCancelCheck isCancelled = {})
 {
     HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
     bool needUninit = SUCCEEDED(hr);
@@ -132,7 +144,7 @@ static bool runWindowsShellOp(HWND hwndOwner, ShellOp op, const QStringList &sou
     ShellProgressSink *sink = nullptr;
     DWORD sinkCookie = 0;
     if (reporter) {
-        sink = new ShellProgressSink(std::move(reporter));
+        sink = new ShellProgressSink(std::move(reporter), isCancelled);
         if (FAILED(pfo->Advise(sink, &sinkCookie))) {
             sink->Release();
             sink = nullptr;
@@ -151,8 +163,9 @@ static bool runWindowsShellOp(HWND hwndOwner, ShellOp op, const QStringList &sou
         }
     }
 
-    QSet<QString> reservedNames;   // names this batch has already claimed
+    FileOperationsService::NameBatch nameBatch;
     for (const QString &src : sources) {
+        if (isCancelled && isCancelled()) break;
         std::wstring srcW = QDir::toNativeSeparators(QDir::cleanPath(src)).toStdWString();
         IShellItem *psiItem = nullptr;
         if (SUCCEEDED(SHCreateItemFromParsingName(srcW.c_str(), NULL, IID_PPV_ARGS(&psiItem)))) {
@@ -161,7 +174,7 @@ static bool runWindowsShellOp(HWND hwndOwner, ShellOp op, const QStringList &sou
                 // only renames for a copy into the folder the item already
                 // lives in, which is where "x - copy.txt" comes from.
                 QString copyName = FileOperationsService::generateCopyName(
-                    src, destDir, policy == FileOperationsService::KeepBoth, &reservedNames);
+                    src, destDir, policy == FileOperationsService::KeepBoth, &nameBatch);
                 if (copyName != QFileInfo(src).fileName()) {
                     std::wstring copyNameW = copyName.toStdWString();
                     pfo->CopyItem(psiItem, psiDest, copyNameW.c_str(), NULL);
@@ -170,7 +183,7 @@ static bool runWindowsShellOp(HWND hwndOwner, ShellOp op, const QStringList &sou
                 }
             } else if (op == ShellOp::Move) {
                 if (policy == FileOperationsService::KeepBoth) {
-                    QString moveName = FileOperationsService::generateCopyName(src, destDir, true, &reservedNames);
+                    QString moveName = FileOperationsService::generateCopyName(src, destDir, true, &nameBatch);
                     std::wstring moveNameW = moveName.toStdWString();
                     pfo->MoveItem(psiItem, psiDest, moveNameW.c_str(), NULL);
                 } else {
@@ -200,7 +213,10 @@ static bool runWindowsShellOp(HWND hwndOwner, ShellOp op, const QStringList &sou
     pfo->Release();
     if (needUninit) CoUninitialize();
 
-    if (hr == HRESULT_FROM_WIN32(ERROR_CANCELLED) || (anyAborted && !SUCCEEDED(hr))) {
+    // E_ABORT from the sink, the shell's own cancel, or an aborted operation all
+    // mean the same thing to the user.
+    if (hr == E_ABORT || hr == HRESULT_FROM_WIN32(ERROR_CANCELLED) || anyAborted
+        || (isCancelled && isCancelled())) {
         errorMessage = QStringLiteral("Operation cancelled by user.");
         return false;
     }
@@ -611,7 +627,7 @@ bool FileOperationsService::isPlainFileName(const QString &name)
 }
 
 QString FileOperationsService::generateCopyName(const QString &sourcePath, const QString &destinationDir,
-                                                bool forceUnique, QSet<QString> *reserved)
+                                                bool forceUnique, NameBatch *batch)
 {
     QFileInfo srcInfo(sourcePath);
 
@@ -626,12 +642,20 @@ QString FileOperationsService::generateCopyName(const QString &sourcePath, const
 #endif
     };
     auto claim = [&](const QString &name) {
-        if (reserved) reserved->insert(key(name));
+        if (batch) batch->claimed.insert(key(name));
         return name;
     };
     auto isTaken = [&](const QString &name) {
-        if (reserved && reserved->contains(key(name))) return true;
-        return QFileInfo::exists(QDir::cleanPath(QDir(destinationDir).filePath(name)));
+        const QString k = key(name);
+        if (batch && batch->claimed.contains(k)) return true;
+        // Remember what the disk said. The next file with the same base then
+        // skips these by lookup instead of stat'ing them all over again.
+        if (batch && batch->onDisk.contains(k)) return true;
+        if (QFileInfo::exists(QDir::cleanPath(QDir(destinationDir).filePath(name)))) {
+            if (batch) batch->onDisk.insert(k);
+            return true;
+        }
+        return false;
     };
 
     // Copying into a different folder keeps the original name, unless the caller
@@ -640,8 +664,9 @@ QString FileOperationsService::generateCopyName(const QString &sourcePath, const
         const QString plain = srcInfo.fileName();
         if (!forceUnique) {
             // An existing file here is deliberate - Replace was chosen. Only a
-            // name already claimed by this same batch forces a new one.
-            if (!(reserved && reserved->contains(key(plain)))) {
+            // name already claimed by this same batch forces a new one, which is
+            // why `claimed` and `onDisk` have to stay separate sets.
+            if (!(batch && batch->claimed.contains(key(plain)))) {
                 return claim(plain);
             }
         } else if (!isTaken(plain)) {
@@ -690,13 +715,22 @@ QString FileOperationsService::generateCopyName(const QString &sourcePath, const
         return name;
     };
 
-    QString candidateName = makeCandidate(startIndex);
-    int copyIndex = (startIndex == 1) ? 2 : (startIndex + 1);
-    while (isTaken(candidateName)) {
-        candidateName = makeCandidate(copyIndex);
-        copyIndex++;
+    // Resume from where the previous file with this base name finished.
+    const QString baseKey = key(base + QLatin1Char('|') + ext);
+    int idx = startIndex;
+    if (batch) {
+        idx = qMax(idx, batch->nextIndex.value(baseKey, startIndex));
     }
 
+    QString candidateName = makeCandidate(idx);
+    while (isTaken(candidateName)) {
+        idx = (idx == 1) ? 2 : idx + 1;
+        candidateName = makeCandidate(idx);
+    }
+
+    if (batch) {
+        batch->nextIndex.insert(baseKey, (idx == 1) ? 2 : idx + 1);
+    }
     return claim(candidateName);
 }
 
@@ -720,7 +754,8 @@ void FileOperationsService::copyItems(const QStringList &sourcePaths, const QStr
     startOperation(QStringLiteral("Copying files..."), QStringLiteral("Preparing copy..."), [this, hwnd, sources, destinationDir, policy]() {
         QString err;
         auto reporter = [this](const QString &name, int done, int total) { updateProgress(name, done, total); };
-        bool ok = runWindowsShellOp(hwnd, ShellOp::Copy, sources, destinationDir, err, policy, reporter);
+        auto cancelled = [this]() { return m_cancelRequested.loadAcquire() != 0; };
+        bool ok = runWindowsShellOp(hwnd, ShellOp::Copy, sources, destinationDir, err, policy, reporter, cancelled);
         if (!ok && err != QStringLiteral("Operation cancelled by user.")) {
             // Fallback manual copy if shell operation failed
             QMetaObject::invokeMethod(this, [this]() { setProgressIsItemCount(true); }, Qt::QueuedConnection);
@@ -750,11 +785,11 @@ bool FileOperationsService::runPortableCopy(const QStringList &sourcePaths, cons
 
     bool allOk = true;
     int processed = 0;
-    QSet<QString> reservedNames;
+    NameBatch nameBatch;
     for (const QString &src : sourcePaths) {
         if (m_cancelRequested.loadAcquire()) return false;
         QFileInfo srcInfo(src);
-        QString copyName = generateCopyName(src, destinationDir, policy == KeepBoth, &reservedNames);
+        QString copyName = generateCopyName(src, destinationDir, policy == KeepBoth, &nameBatch);
         QString dst = QDir::cleanPath(QDir(destinationDir).filePath(copyName));
         processed++;
         updateProgress(srcInfo.fileName(), processed, total);
@@ -780,7 +815,8 @@ void FileOperationsService::moveItems(const QStringList &sourcePaths, const QStr
     startOperation(QStringLiteral("Moving files..."), QStringLiteral("Preparing move..."), [this, hwnd, sources, destinationDir, policy]() {
         QString err;
         auto reporter = [this](const QString &name, int done, int total) { updateProgress(name, done, total); };
-        bool ok = runWindowsShellOp(hwnd, ShellOp::Move, sources, destinationDir, err, policy, reporter);
+        auto cancelled = [this]() { return m_cancelRequested.loadAcquire() != 0; };
+        bool ok = runWindowsShellOp(hwnd, ShellOp::Move, sources, destinationDir, err, policy, reporter, cancelled);
         if (!ok) m_lastError = err;
         return ok;
     });
@@ -796,12 +832,12 @@ void FileOperationsService::moveItems(const QStringList &sourcePaths, const QStr
         int processed = 0;
         int credited = 0;   // items fully accounted for by finished sources
         QString err;
-        QSet<QString> reservedNames;
+        NameBatch nameBatch;
         for (int i = 0; i < sources.size(); ++i) {
             if (m_cancelRequested.loadAcquire()) return false;
             const QString &src = sources.at(i);
             QFileInfo srcInfo(src);
-            const QString name = generateCopyName(src, destinationDir, policy == KeepBoth, &reservedNames);
+            const QString name = generateCopyName(src, destinationDir, policy == KeepBoth, &nameBatch);
             QString dst = QDir::cleanPath(QDir(destinationDir).filePath(name));
             if (isSamePath(src, dst)) {
                 credited += counts.at(i);
@@ -966,6 +1002,16 @@ bool FileOperationsService::performRename(const QString &oldPath, const QString 
     if (info.fileName() == trimmed) return true;
 
     QString newPath = info.dir().filePath(trimmed);
+
+    // QFile::rename just returns false when something is already there, which
+    // produced a "Failed to rename" that did not say why.
+    if (QFileInfo::exists(newPath)) {
+        if (errorOut) {
+            *errorOut = QStringLiteral("\"%1\" already exists in this folder.").arg(trimmed);
+        }
+        return false;
+    }
+
     bool ok = QFile::rename(oldPath, newPath);
 #ifdef Q_OS_WIN
     if (!ok) {

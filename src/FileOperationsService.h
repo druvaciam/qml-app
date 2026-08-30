@@ -22,6 +22,7 @@
 #pragma once
 
 #include <QObject>
+#include <QHash>
 #include <QSet>
 #include <QStringList>
 #include <QFutureWatcher>
@@ -134,8 +135,28 @@ public:
     /**
      * @brief Generate unique copy name when copying into same directory (e.g. "foo - copy.txt", "foo - copy (2).txt").
      */
+    /**
+     * @brief State shared by one batch of generated names.
+     *
+     * claimed - names this batch has already taken, so 140 files sharing a base
+     *           do not all pick the same free name.
+     * onDisk  - names already found to exist. Without this the search re-stats
+     *           the same names for every file, which is quadratic: working out
+     *           800 names took 617 ms on a fast filesystem and far longer on
+     *           NTFS, all of it before the first byte is copied.
+     */
+    struct NameBatch {
+        QSet<QString> claimed;
+        QSet<QString> onDisk;
+        /// Next free index per base name, so each file resumes the search where
+        /// the previous one stopped rather than counting up from the start
+        /// again. Without it the batch is quadratic no matter how cheap each
+        /// step is made.
+        QHash<QString, int> nextIndex;
+    };
+
     static QString generateCopyName(const QString &sourcePath, const QString &destinationDir,
-                                    bool forceUnique = false, QSet<QString> *reserved = nullptr);
+                                    bool forceUnique = false, NameBatch *batch = nullptr);
 
     /**
      * @brief Compare two paths for pointing at the same location.

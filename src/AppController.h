@@ -121,15 +121,25 @@ public:
   Q_INVOKABLE bool createFolder(const QString &folderName);
 
   /**
-   * @brief Rename an item in activePanel via FileOperationsService.
-   */
-  Q_INVOKABLE bool renameActiveItem(const QString &oldPath,
-                                    const QString &newName);
-
-  /**
    * @brief Refresh file lists and drive statistics in both panels.
    */
+  /**
+   * @brief Reload both file lists, without re-enumerating mounted volumes.
+   * What an operation needs: files changed, the set of drives did not.
+   */
+  Q_INVOKABLE void refreshPanels();
+
+  /**
+   * @brief Reload the lists AND rescan the drives. For an explicit user
+   * refresh (Ctrl+R), where a drive may genuinely have appeared or gone.
+   */
   Q_INVOKABLE void refreshAll();
+
+  /**
+   * @brief Update one file's row in whichever panels are showing it.
+   * Cheap alternative to refreshAll() when only one file changed.
+   */
+  Q_INVOKABLE void refreshItem(const QString &filePath);
 
   /**
    * @brief Open a system terminal (PowerShell / CMD) inside activePanel's

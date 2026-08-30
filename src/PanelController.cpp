@@ -266,6 +266,20 @@ void PanelController::updateCurrentDriveInfo()
         m_currentDriveInfo = DriveInfo();
     }
     emit currentDriveInfoChanged();
+
+    // Refresh this one drive's entry in the bar as well. A copy changes the free
+    // space shown there, and re-running QStorageInfo::mountedVolumes() for that
+    // is far too expensive to do after every operation - it stats every mount
+    // and blocks on a disconnected network drive.
+    if (!m_currentDriveInfo.rootPath().isEmpty()) {
+        for (int i = 0; i < m_driveList.size(); ++i) {
+            if (m_driveList.at(i).rootPath() == m_currentDriveInfo.rootPath()) {
+                m_driveList[i] = m_currentDriveInfo;
+                emit driveListChanged();
+                break;
+            }
+        }
+    }
 }
 
 #ifdef Q_OS_WIN
@@ -486,11 +500,26 @@ void PanelController::trySelectNewItem(const QStringList &namesBefore, int attem
 
 bool PanelController::renameItem(const QString &oldPath, const QString &newName)
 {
-    bool ok = FileOperationsService::performRename(oldPath, newName);
-    if (ok) {
+    const QString trimmed = newName.trimmed();
+
+    if (m_fileOps) {
+        // Emits operationCompleted / operationError. AppController reloads the
+        // panels on the first and shows a message on the second, so a failed
+        // rename is no longer silent.
+        if (!m_fileOps->renameItem(oldPath, trimmed)) {
+            return false;
+        }
+    } else {
+        if (!FileOperationsService::performRename(oldPath, trimmed)) {
+            return false;
+        }
         refresh();
     }
-    return ok;
+
+    // Keep the cursor on the file that was just renamed. Without this the view
+    // restores the row by its OLD name, fails to find it, and jumps elsewhere.
+    selectItemByName(trimmed);
+    return true;
 }
 
 QStringList PanelController::getDragPaths(int index) const

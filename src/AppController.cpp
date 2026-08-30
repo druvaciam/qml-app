@@ -105,6 +105,9 @@ AppController::AppController(QObject *parent)
         }
     });
 
+    m_leftPanel->setFileOperations(m_fileOps);
+    m_rightPanel->setFileOperations(m_fileOps);
+
     connect(m_fileOps, &FileOperationsService::operationCompleted,
             this, &AppController::onFileOperationCompleted);
 
@@ -118,6 +121,11 @@ AppController::AppController(QObject *parent)
 
     connect(QGuiApplication::clipboard(), &QClipboard::dataChanged,
             this, &AppController::clipboardChanged);
+
+    // Wired here rather than relayed through the preview dialog's QML, so any
+    // save updates the panels - not only one that happens to go through it.
+    connect(m_preview, &FilePreviewService::fileSaved,
+            this, &AppController::refreshItem);
 }
 
 AppController::~AppController()
@@ -462,24 +470,30 @@ bool AppController::createFolder(const QString &folderName)
     return ok;
 }
 
-bool AppController::renameActiveItem(const QString &oldPath, const QString &newName)
+void AppController::refreshPanels()
 {
-    bool ok = m_fileOps->renameItem(oldPath, newName);
-    if (ok) {
-        activePanel()->refresh();
-        targetPanel()->refresh();
-    }
-    return ok;
+    m_leftPanel->refresh();
+    m_rightPanel->refresh();
 }
 
 void AppController::refreshAll()
 {
-    m_leftPanel->refresh();
-    m_rightPanel->refresh();
-    // The full drive sweep belongs to an explicit refresh, not to every
-    // incidental list reload. See PanelController::refresh().
+    refreshPanels();
+    // QStorageInfo::mountedVolumes() stats every mount on the machine and can
+    // block on a disconnected network drive, so it belongs only to an explicit
+    // refresh - not to the end of every copy, move and delete.
     m_leftPanel->refreshDrives();
     m_rightPanel->refreshDrives();
+}
+
+void AppController::refreshItem(const QString &filePath)
+{
+    if (m_leftPanel && m_leftPanel->model()) {
+        m_leftPanel->model()->refreshItem(filePath);
+    }
+    if (m_rightPanel && m_rightPanel->model()) {
+        m_rightPanel->model()->refreshItem(filePath);
+    }
 }
 
 void AppController::openTerminalInActivePanel()
@@ -505,7 +519,8 @@ void AppController::onFileOperationCompleted(bool success, const QString &messag
         }
     }
 
-    refreshAll();
+    // Files changed; the set of drives did not.
+    refreshPanels();
     if (!success && !message.isEmpty()) {
         emit showMessageRequested(QStringLiteral("Operation Failed"), message);
     }
