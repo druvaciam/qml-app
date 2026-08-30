@@ -512,6 +512,10 @@ ApplicationWindow {
             // Left File Panel
             FilePanel {
                 id: leftPanel
+                // Each panel is its own FocusScope, so one of them has to hold
+                // the window's focus to begin with. Without this the first
+                // forceActiveFocus() from anywhere decides it.
+                focus: true
                 SplitView.fillWidth: true
                 SplitView.preferredWidth: parent.width / 2
                 SplitView.minimumWidth: 320
@@ -632,6 +636,16 @@ ApplicationWindow {
         } else {
             rightPanel.fileListView.setFocus()
         }
+
+        // If the highlighted pane and the keyboard ever disagree again, say so in
+        // the log rather than leaving it to be guessed at from the symptoms.
+        Qt.callLater(function() {
+            let want = (appCtrl.activePanelIndex === 0) ? "left" : "right"
+            let got = leftPanel.activeFocus ? "left" : (rightPanel.activeFocus ? "right" : "neither")
+            if (want !== got) {
+                console.warn("FOCUS MISMATCH: active pane is", want, "but keyboard focus is on", got)
+            }
+        })
     }
 
     // Modals & Dialogs
@@ -683,6 +697,19 @@ ApplicationWindow {
         target: appCtrl.fileOps
         function onConflictsFound(names, sources, destination, isMove) {
             conflictDialog.open(names, sources, destination, isMove)
+        }
+        function onIsBusyChanged(busy) {
+            // Deferred on purpose. setBusy(false) is emitted BEFORE
+            // operationCompleted, and it is operationCompleted that runs
+            // refreshAll() and destroys every delegate. Restoring focus here and
+            // now would just have it thrown away a moment later by that reload,
+            // which is exactly what was happening: the border stayed on the pane
+            // you were using while the keyboard ended up in the other one.
+            if (!busy) {
+                Qt.callLater(function() {
+                    if (!anyModalOpen()) restoreActiveFocus()
+                })
+            }
         }
     }
 

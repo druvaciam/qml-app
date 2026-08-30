@@ -172,6 +172,37 @@ Item {
         listView.positionViewAtIndex(targetIdx, ListView.Contain)
     }
 
+    /// Move the cursor by delta rows, extending the selection while Shift is held.
+    ///
+    /// Up and Down have dedicated Keys handlers, and QML gives those the event
+    /// before the general Keys.onPressed - so a Shift+Up branch written in
+    /// onPressed never ran. Both entry points call this instead.
+    function moveCursorBy(delta, modifiers) {
+        if (listView.count === 0) return
+        let target = Math.max(0, Math.min(listView.count - 1, listView.currentIndex + delta))
+
+        if (modifiers & Qt.ShiftModifier) {
+            if (rootListView.selectionAnchorIndex < 0) {
+                rootListView.selectionAnchorIndex = listView.currentIndex
+            }
+            listView.currentIndex = target
+            // Ctrl+Shift adds to what is already marked instead of replacing it.
+            rootListView.controller.model.selectRange(rootListView.selectionAnchorIndex, target,
+                                                      !(modifiers & Qt.ControlModifier))
+        } else {
+            // Moving without Shift re-anchors, so the next Shift range starts here.
+            rootListView.selectionAnchorIndex = target
+            listView.currentIndex = target
+        }
+        listView.positionViewAtIndex(target, ListView.Contain)
+    }
+
+    /// How many whole rows fit in the viewport. Page Up/Down move by one less
+    /// than this, so the row you were looking at stays on screen as an anchor.
+    function rowsPerPage() {
+        return Math.max(1, Math.floor(listView.height / Theme.rowHeight))
+    }
+
     function longPressPending() { return longPressTimer.running }
     function cancelLongPress() { longPressTimer.stop() }
 
@@ -231,7 +262,8 @@ Item {
         RowLayout {
             anchors.fill: parent
             anchors.leftMargin: 4
-            anchors.rightMargin: 4
+            // Matches the row margin above so headers stay over their columns.
+            anchors.rightMargin: (listView.contentHeight > listView.height) ? 14 : 4
             spacing: 2
 
             // Select All / Deselect All Toggle button
@@ -529,12 +561,36 @@ Item {
         anchors.right: parent.right
         clip: true
         model: rootListView.controller.model
+        // Correct now that FilePanel is a FocusScope: this applies within its own
+        // panel only, so the two panels no longer compete. A binding here would
+        // not survive - forceActiveFocus() assigns to `focus` and breaks it.
         focus: true
         boundsBehavior: Flickable.StopAtBounds
         currentIndex: 0
 
         ScrollBar.vertical: ScrollBar {
-            policy: ScrollBar.AsNeeded
+            id: vScroll
+            // AsNeeded lets the Basic style fade the bar out whenever it is not
+            // being touched, so it only appeared mid-scroll. Keep it on for as
+            // long as there is something to scroll, and off entirely when the
+            // whole folder already fits - an inert full-height bar is just noise.
+            policy: listView.contentHeight > listView.height ? ScrollBar.AlwaysOn
+                                                             : ScrollBar.AlwaysOff
+            width: 10
+
+            // The default Basic look is a pale bar that barely registers on a
+            // dark background; these follow the app's palette.
+            contentItem: Rectangle {
+                implicitWidth: 8
+                radius: width / 2
+                color: vScroll.pressed ? Theme.accent
+                     : (vScroll.hovered ? Theme.textSecondary : Theme.borderSubtle)
+            }
+
+            background: Rectangle {
+                color: Theme.bgInput
+                radius: width / 2
+            }
         }
 
         // Dedicated free space below the last item when scrolled to bottom
@@ -829,7 +885,9 @@ Item {
             RowLayout {
                 anchors.fill: parent
                 anchors.leftMargin: 28
-                anchors.rightMargin: 6
+                // Extra room only while the scrollbar is actually shown, so the
+                // Date column does not run underneath it.
+                anchors.rightMargin: (listView.contentHeight > listView.height) ? 16 : 6
                 spacing: 2
                 z: 1
 
@@ -1088,13 +1146,16 @@ Item {
             }
         }
 
-        // Keyboard navigation
-        Keys.onUpPressed: {
-            if (currentIndex > 0) currentIndex--
+        // Keyboard navigation. These take the event before Keys.onPressed, so
+        // the Shift handling has to live here.
+        Keys.onUpPressed: (event) => {
+            rootListView.moveCursorBy(-1, event.modifiers)
+            event.accepted = true
         }
 
-        Keys.onDownPressed: {
-            if (currentIndex < count - 1) currentIndex++
+        Keys.onDownPressed: (event) => {
+            rootListView.moveCursorBy(1, event.modifiers)
+            event.accepted = true
         }
 
         Keys.onReturnPressed: {
@@ -1115,13 +1176,12 @@ Item {
         }
 
         Keys.onPressed: (event) => {
-            if ((event.key === Qt.Key_Up || event.key === Qt.Key_Down) && (event.modifiers & Qt.ShiftModifier)) {
-                if (rootListView.selectionAnchorIndex < 0) {
-                    rootListView.selectionAnchorIndex = listView.currentIndex
-                }
-                let target = (event.key === Qt.Key_Up) ? Math.max(0, listView.currentIndex - 1) : Math.min(listView.count - 1, listView.currentIndex + 1)
-                listView.currentIndex = target
-                rootListView.controller.model.selectRange(rootListView.selectionAnchorIndex, target, !(event.modifiers & Qt.ControlModifier))
+            if (event.key === Qt.Key_PageDown || event.key === Qt.Key_PageUp) {
+                // Almost a full screen, keeping one row of overlap so you never
+                // lose your place between jumps.
+                let step = Math.max(1, rootListView.rowsPerPage() - 1)
+                rootListView.moveCursorBy(event.key === Qt.Key_PageDown ? step : -step,
+                                          event.modifiers)
                 event.accepted = true
             } else if (event.key === Qt.Key_Backspace) {
                 rootListView.controller.navigateUp()

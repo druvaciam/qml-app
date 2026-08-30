@@ -22,6 +22,7 @@
 #pragma once
 
 #include <QObject>
+#include <QSet>
 #include <QStringList>
 #include <QFutureWatcher>
 #include <QAtomicInt>
@@ -129,7 +130,7 @@ public:
      * @brief Generate unique copy name when copying into same directory (e.g. "foo - copy.txt", "foo - copy (2).txt").
      */
     static QString generateCopyName(const QString &sourcePath, const QString &destinationDir,
-                                    bool forceUnique = false);
+                                    bool forceUnique = false, QSet<QString> *reserved = nullptr);
 
     /**
      * @brief Compare two paths for pointing at the same location.
