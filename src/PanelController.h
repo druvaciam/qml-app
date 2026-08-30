@@ -170,6 +170,10 @@ signals:
     void currentIndexChanged(int index);
     void isActiveChanged(bool active);
     void filterTextChanged(const QString &filter);
+    /// A navigation that could not happen. Typing a path that does not exist
+    /// used to close the editor and leave you where you were, with nothing to
+    /// tell a typo apart from a folder that simply looks similar.
+    void navigationError(const QString &message);
     void fileActivated(const QString &filePath);
     /// A shell command created exactly one new item; the view should put it
     /// into inline rename, the way Explorer does after New > Text Document.

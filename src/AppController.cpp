@@ -119,6 +119,22 @@ AppController::AppController(QObject *parent)
                 emit showMessageRequested(QStringLiteral("Operation Failed"), error);
             });
 
+    // Same dead-signal shape as operationError above: the model has always
+    // emitted directoryLoadError, and nothing has ever listened to it. Both are
+    // routed to the one message dialog so a failed navigation is as visible as
+    // a failed copy. goBack/goForward reach the model directly, so the model's
+    // own signal is needed as well as the controller's.
+    for (PanelController *panel : {m_leftPanel, m_rightPanel}) {
+        connect(panel, &PanelController::navigationError, this,
+                [this](const QString &message) {
+                    emit showMessageRequested(QStringLiteral("Cannot Open Folder"), message);
+                });
+        connect(panel->model(), &FileListModel::directoryLoadError, this,
+                [this](const QString &message) {
+                    emit showMessageRequested(QStringLiteral("Cannot Open Folder"), message);
+                });
+    }
+
     connect(QGuiApplication::clipboard(), &QClipboard::dataChanged,
             this, &AppController::clipboardChanged);
 

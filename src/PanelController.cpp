@@ -89,6 +89,16 @@ void PanelController::navigateTo(const QString &path)
 
     QDir dir(cleanPath);
     if (!dir.exists()) {
+        // Typing a file path into the breadcrumb bar is a common slip, and
+        // "does not exist" would be a lie about it.
+        const QFileInfo info(cleanPath);
+        if (info.exists()) {
+            emit navigationError(QStringLiteral("'%1' is a file, not a folder.").arg(cleanPath));
+        } else {
+            emit navigationError(QStringLiteral("Cannot open '%1'. The folder does not exist, or is not "
+                                                "reachable (a removable drive may have been unplugged).")
+                                     .arg(cleanPath));
+        }
         return;
     }
 
