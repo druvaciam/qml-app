@@ -94,10 +94,35 @@ FocusScope {
                         verticalAlignment: TextInput.AlignVCenter
                         selectByMouse: true
 
-                        text: root.controller.filterText
-                        onTextEdited: {
-                            root.controller.filterText = text
+                        // Deliberately NOT `text: root.controller.filterText`.
+                        //
+                        // That is a two-way binding: the field writes the
+                        // controller, the controller writes back into the field.
+                        // Re-assigning `text` on a TextInput resets its cursor and
+                        // selection, so every character typed came back as an
+                        // assignment that disturbed the field under the caret.
+                        // The Connections block below pushes the value one way
+                        // only, and never while it already matches.
+                        Connections {
+                            target: root.controller
+                            function onFilterTextChanged(filter) {
+                                if (filterInput.text !== filter) {
+                                    filterInput.text = filter
+                                }
+                            }
                         }
+
+                        // Applying the filter re-reads the whole directory. Doing
+                        // that per keystroke means eight reloads to type eight
+                        // characters, each one rebuilding every row.
+                        Timer {
+                            id: filterDebounce
+                            interval: 250
+                            repeat: false
+                            onTriggered: root.controller.filterText = filterInput.text
+                        }
+
+                        onTextEdited: filterDebounce.restart()
 
                         onActiveFocusChanged: {
                             if (activeFocus) {
@@ -106,11 +131,18 @@ FocusScope {
                         }
 
                         Keys.onEscapePressed: {
+                            filterDebounce.stop()
+                            // Typing breaks the binding on `text`, so clearing the
+                            // controller alone would leave the old text on screen.
+                            filterInput.text = ""
                             root.controller.filterText = ""
                             fileListView.setFocus()
                         }
 
                         Keys.onReturnPressed: {
+                            // Don't wait out the debounce when the user is done.
+                            filterDebounce.stop()
+                            root.controller.filterText = filterInput.text
                             fileListView.setFocus()
                         }
 
@@ -140,6 +172,8 @@ FocusScope {
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
                             onClicked: {
+                                filterDebounce.stop()
+                                filterInput.text = ""
                                 root.controller.filterText = ""
                                 fileListView.setFocus()
                             }

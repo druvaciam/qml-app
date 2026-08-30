@@ -1,4 +1,5 @@
 #include "FileOperationsService.h"
+#include <QDateTime>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -408,6 +409,70 @@ QList<int> FileOperationsService::countEachPath(const QStringList &paths)
     return counts;
 }
 
+/// Carry the source's modification date onto the copy.
+///
+/// QFile::copy brings content and permissions across but not timestamps, so
+/// every copied file was stamped with the moment it was copied. Explorer and
+/// Total Commander both preserve it, and Date is one of the columns this app
+/// sorts by, so losing it reorders a folder that was only duplicated.
+/// Copies are written beside the destination and swapped in only once they
+/// succeed, so a failure never destroys the file already there. The scratch
+/// file is an internal detail and should never be seen: the name is
+/// dot-prefixed, which both this app and every Unix tool treat as hidden, and
+/// FileListModel drops it from the listing whatever "show hidden" says.
+static QString scratchSuffix()
+{
+    return QStringLiteral(".qmlcommander-part");
+}
+
+static QString scratchPathFor(const QString &dstPath)
+{
+    const QFileInfo info(dstPath);
+    return QDir::cleanPath(info.absolutePath() + QLatin1Char('/')
+                           + QLatin1Char('.') + info.fileName() + scratchSuffix());
+}
+
+/// Kill the app mid-copy and its scratch files stayed in the destination for
+/// good - nothing ever swept them up. Clearing them when a copy into that
+/// folder starts is the natural moment: it is the only time we know the folder
+/// is ours to tidy, and any scratch file still there is certainly stale
+/// because a copy is not already running.
+static void removeStaleScratchFiles(const QString &dirPath)
+{
+    QDir dir(dirPath);
+    if (!dir.exists()) return;
+
+    const QStringList leftovers =
+        dir.entryList(QStringList() << (QStringLiteral("*") + scratchSuffix()),
+                      QDir::Files | QDir::Hidden | QDir::System);
+    for (const QString &name : leftovers) {
+        QFile::remove(dir.absoluteFilePath(name));
+    }
+}
+
+static void preserveModifiedTime(const QString &path, const QDateTime &when)
+{
+    if (!when.isValid()) return;
+
+    QFile file(path);
+    if (file.open(QIODevice::ReadWrite)) {
+        file.setFileTime(when, QFileDevice::FileModificationTime);
+        return;
+    }
+
+    // A read-only file cannot be opened for writing, and permissions were
+    // already copied from the source, so lift write access just long enough.
+    const QFileDevice::Permissions perms = QFile::permissions(path);
+    if (!QFile::setPermissions(path, perms | QFileDevice::WriteOwner)) {
+        return;
+    }
+    if (file.open(QIODevice::ReadWrite)) {
+        file.setFileTime(when, QFileDevice::FileModificationTime);
+        file.close();
+    }
+    QFile::setPermissions(path, perms);
+}
+
 bool FileOperationsService::copyRecursively(const QString &srcPath, const QString &dstPath,
                                             int &processed, int total, QString &error)
 {
@@ -454,7 +519,7 @@ bool FileOperationsService::copyRecursively(const QString &srcPath, const QStrin
 
         // Write beside the destination first and swap it in only once the copy
         // succeeded, so a failure never destroys the file already there.
-        const QString partPath = dstPath + QStringLiteral(".qmlcommander-part");
+        const QString partPath = scratchPathFor(dstPath);
         QFile::remove(partPath);
 
         QFile srcFile(srcPath);
@@ -473,6 +538,10 @@ bool FileOperationsService::copyRecursively(const QString &srcPath, const QStrin
             QFile::remove(partPath);
             return false;
         }
+
+        // QFile::copy already carries the permissions across; only the
+        // modification date needs restoring.
+        preserveModifiedTime(dstPath, srcInfo.lastModified());
         return true;
     }
 }
@@ -783,6 +852,8 @@ bool FileOperationsService::runPortableCopy(const QStringList &sourcePaths, cons
     const int total = countTotalItems(sourcePaths);
     m_workerTotal.storeRelease(total);
 
+    removeStaleScratchFiles(destinationDir);
+
     bool allOk = true;
     int processed = 0;
     NameBatch nameBatch;
@@ -902,9 +973,19 @@ void FileOperationsService::deleteItems(const QStringList &paths, bool permanent
             QFileInfo info(path);
             updateProgress(info.fileName(), processed, total);
 
+            // Every failure records why, and the first one wins - it is the one
+            // the user can act on. Previously only deleteRecursively wrote here,
+            // so a plain file that would not go left no reason at all and the
+            // report fell back to a generic sentence naming nothing.
+            auto noteFailure = [&err](const QString &reason) {
+                if (err.isEmpty()) err = reason;
+            };
+
             if (permanent) {
                 if (info.isDir()) {
-                    if (!deleteRecursively(path, processed, total, err)) {
+                    QString why;
+                    if (!deleteRecursively(path, processed, total, why)) {
+                        noteFailure(why);
                         fallbackPaths.append(path);
                     }
                 } else {
@@ -913,6 +994,7 @@ void FileOperationsService::deleteItems(const QStringList &paths, bool permanent
                         // Clear read-only attribute if set and retry
                         QFile::setPermissions(path, QFile::ReadOwner | QFile::WriteOwner);
                         if (!QFile::remove(path)) {
+                            noteFailure(QStringLiteral("Cannot delete '%1' (File in use or access denied)").arg(path));
                             fallbackPaths.append(path);
                         }
                     }
@@ -920,6 +1002,7 @@ void FileOperationsService::deleteItems(const QStringList &paths, bool permanent
             } else {
                 // moveToTrash takes the whole subtree in one call.
                 if (!QFile::moveToTrash(path)) {
+                    noteFailure(QStringLiteral("Cannot move '%1' to the Recycle Bin (in use or access denied)").arg(path));
                     fallbackPaths.append(path);
                 }
             }
@@ -933,10 +1016,16 @@ void FileOperationsService::deleteItems(const QStringList &paths, bool permanent
         // If direct deletion failed (e.g. system folder requiring UAC elevation), fallback to Windows Shell IFileOperation
         if (!fallbackPaths.isEmpty() && !m_cancelRequested.loadAcquire()) {
             HWND hwnd = GetForegroundWindow();
-            QString err;
-            bool shellOk = runWindowsShellOp(hwnd, permanent ? ShellOp::Delete : ShellOp::Trash, fallbackPaths, QString(), err);
+            // Named apart from the outer `err` on purpose. This is the shell's
+            // account of its own retry; the outer one records why the direct
+            // attempt failed, which is not worth reporting here because the
+            // shell often goes on to succeed with elevation.
+            QString shellErr;
+            bool shellOk = runWindowsShellOp(hwnd, permanent ? ShellOp::Delete : ShellOp::Trash, fallbackPaths, QString(), shellErr);
             if (!shellOk) {
-                m_lastError = err.isEmpty() ? QStringLiteral("Cannot delete selected items (Permission denied or in use).") : err;
+                m_lastError = shellErr.isEmpty()
+                    ? QStringLiteral("Cannot delete selected items (Permission denied or in use).")
+                    : shellErr;
                 allOk = false;
             }
         } else if (!fallbackPaths.isEmpty()) {
@@ -945,7 +1034,17 @@ void FileOperationsService::deleteItems(const QStringList &paths, bool permanent
 #else
         if (!fallbackPaths.isEmpty()) {
             allOk = false;
-            m_lastError = QStringLiteral("Cannot delete selected items (Permission denied or in use).");
+            // There is no shell retry on this platform, so the reason recorded
+            // above is the only accurate account of what went wrong - and it
+            // names the offending item, which "selected items" cannot.
+            if (err.isEmpty()) {
+                err = QStringLiteral("Cannot delete '%1' (Permission denied or in use)")
+                          .arg(fallbackPaths.first());
+            }
+            m_lastError = fallbackPaths.size() > 1
+                ? QStringLiteral("%1 - and %2 more item(s) could not be deleted.")
+                      .arg(err).arg(fallbackPaths.size() - 1)
+                : err;
         }
 #endif
 

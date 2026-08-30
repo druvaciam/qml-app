@@ -74,7 +74,7 @@ public:
     QList<DriveInfo> driveList() const { return m_driveList; }
     DriveInfo currentDriveInfo() const;
 
-    int totalItemsCount() const { return m_model ? m_model->count() : 0; }
+    int totalItemsCount() const { return m_model ? m_model->fileItemsCount() : 0; }
     int selectedItemsCount() const { return m_model ? m_model->selectedCount() : 0; }
     QString selectedSizeFormatted() const { return m_model ? m_model->selectedSizeFormatted() : QString(); }
 
@@ -178,6 +178,12 @@ signals:
     void selectItemRequested(int index);
 
 private:
+    /// Quick filters are per-visit, not sticky: Explorer and Total Commander
+    /// both drop them when you change folder. Without this the filter silently
+    /// stayed on, hiding most of the directory you had just opened - and
+    /// navigateUp() could not find the folder it came from to put the cursor
+    /// back on it, because the filter had hidden that row too.
+    void clearFilterOnNavigate();
     void pushHistory(const QString &path);
     void trySelectNewItem(const QStringList &namesBefore, int attemptsLeft);
     void updateCurrentDriveInfo();

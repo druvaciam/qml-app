@@ -3,7 +3,12 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import QmlCommander
 
-Item {
+// A FocusScope, not a plain Item. The ListView inside declares `focus: true`;
+// without a scope here that claim propagates up into FilePanel's scope and
+// competes with the quick-filter field. Every keystroke in the filter resets the
+// model, which churns the list, and the competition resolved back to the list -
+// so the filter lost focus after each character.
+FocusScope {
     id: rootListView
     required property PanelController controller
 
@@ -708,6 +713,7 @@ Item {
         // panel only, so the two panels no longer compete. A binding here would
         // not survive - forceActiveFocus() assigns to `focus` and breaks it.
         focus: true
+
         boundsBehavior: Flickable.StopAtBounds
         currentIndex: 0
 
@@ -1003,7 +1009,16 @@ Item {
                         anchors.fill: parent
                         anchors.topMargin: 2
                         anchors.bottomMargin: 2
-                        active: rootListView.editingIndex === index
+                        // The >= 0 guard is essential. editingIndex is -1 when
+                        // nothing is being renamed, and a delegate's `index` is
+                        // also -1 while it is being torn down or rebuilt - so a
+                        // bare equality is TRUE during every model reset. The
+                        // editor then loaded, took focus via beginEditing(), and
+                        // was destroyed again, leaving focus on the delegate.
+                        // That is what stole focus from the quick filter on each
+                        // keystroke.
+                        active: rootListView.editingIndex >= 0
+                                && rootListView.editingIndex === index
                         sourceComponent: renameEditorComponent
 
                         // The editor is built from a Component and does NOT

@@ -178,6 +178,19 @@ void FileListModel::setFilterPattern(const QString &pattern)
     }
 }
 
+bool FileListModel::isCopyScratchFile(const QString &fileName)
+{
+    return fileName.endsWith(QStringLiteral(".qmlcommander-part"));
+}
+
+void FileListModel::clearFilterNoReload()
+{
+    if (!m_filterPattern.isEmpty()) {
+        m_filterPattern.clear();
+        emit filterPatternChanged();
+    }
+}
+
 void FileListModel::refreshItem(const QString &filePath)
 {
     if (filePath.isEmpty() || m_items.isEmpty()) {
@@ -623,13 +636,26 @@ void FileListModel::loadDirectory()
                 nameFilters << trimmedTok;
             }
         }
-        filters |= QDir::AllDirs;
+        // Deliberately no QDir::AllDirs here. That flag means "list every
+        // directory whatever the name filters say", so typing *.cpp used to
+        // return the matching files plus every folder in the directory - in a
+        // folder full of subfolders the filter looked broken. Explorer and
+        // Total Commander both match folders by name like anything else.
+        // Navigating out is unaffected: the ".." row is added above, before
+        // any of this, so it is always there.
     }
 
     QFileInfoList fileInfoList = dir.entryInfoList(nameFilters, filters, QDir::NoSort);
 
 
     for (const QFileInfo &info : fileInfoList) {
+        // Dropped whatever "show hidden" says. A copy in progress creates and
+        // removes one of these per file, and the watcher was faithfully showing
+        // every one of them flicker through the panel.
+        if (isCopyScratchFile(info.fileName())) {
+            continue;
+        }
+
         bool isHidden = info.isHidden() || info.fileName().startsWith(QLatin1Char('.'));
         if (!m_showHidden && isHidden) {
             continue;

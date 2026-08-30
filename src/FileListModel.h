@@ -93,6 +93,20 @@ public:
     void setCurrentPath(const QString &path);
 
     int count() const { return static_cast<int>(m_items.size()); }
+
+    /// True for the scratch files a copy writes beside its destination. They
+    /// are ours, not the user's, and are never worth showing.
+    static bool isCopyScratchFile(const QString &fileName);
+
+    /// Rows the user can actually act on. `count` is the row count, which the
+    /// view needs, but it includes the ".." row - that is navigation, not an
+    /// item, and it cannot be selected. The status bar was reporting it and so
+    /// read one too many in every folder below the root.
+    int fileItemsCount() const
+    {
+        const int rows = static_cast<int>(m_items.size());
+        return (rows > 0 && m_items.first().isParent) ? rows - 1 : rows;
+    }
     int selectedCount() const { return m_selectedCount; }
     qint64 selectedSizeBytes() const { return m_selectedSizeBytes; }
     QString selectedSizeFormatted() const;
@@ -109,6 +123,11 @@ public:
 
     QString filterPattern() const { return m_filterPattern; }
     Q_INVOKABLE void setFilterPattern(const QString &pattern);
+    /// Drops the filter without re-reading the folder. Used when leaving a
+    /// directory: going through setFilterPattern() there would reload the
+    /// folder being left behind purely to throw the result away, which is a
+    /// visible stall in a large one.
+    void clearFilterNoReload();
 
     // QML Invokables for interaction
     Q_INVOKABLE void refresh();

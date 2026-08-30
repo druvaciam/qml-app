@@ -66,6 +66,20 @@ void PanelController::setFilterText(const QString &text)
     }
 }
 
+void PanelController::clearFilterOnNavigate()
+{
+    if (m_filterText.isEmpty()) {
+        return;
+    }
+    m_filterText.clear();
+    if (m_model) {
+        // Deliberately not setFilterText(): that reloads the directory we are
+        // leaving. The caller loads the new one a moment later anyway.
+        m_model->clearFilterNoReload();
+    }
+    emit filterTextChanged(m_filterText);
+}
+
 void PanelController::navigateTo(const QString &path)
 {
     QString cleanPath = QDir::cleanPath(path);
@@ -80,6 +94,7 @@ void PanelController::navigateTo(const QString &path)
 
     if (!FileOperationsService::isSamePath(m_model->currentPath(), cleanPath)) {
         pushHistory(cleanPath);
+        clearFilterOnNavigate();
         m_model->setCurrentPath(cleanPath);
     }
 }
@@ -124,6 +139,7 @@ void PanelController::goBack()
     if (canGoBack()) {
         m_historyIndex--;
         QString path = m_history.at(m_historyIndex);
+        clearFilterOnNavigate();
         m_model->setCurrentPath(path);
         emit historyChanged();
     }
@@ -134,6 +150,7 @@ void PanelController::goForward()
     if (canGoForward()) {
         m_historyIndex++;
         QString path = m_history.at(m_historyIndex);
+        clearFilterOnNavigate();
         m_model->setCurrentPath(path);
         emit historyChanged();
     }
