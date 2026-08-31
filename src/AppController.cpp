@@ -535,6 +535,30 @@ void AppController::onFileOperationCompleted(bool success, const QString &messag
         }
     }
 
+    // The rows the operation touched are applied straight away. Re-reading the
+    // folder to discover a change we already know about is what made deleting
+    // one file out of 14000 take a fifth of a second on a fast disk, and much
+    // longer on a real one: the delete itself measured 0 ms.
+    //
+    // The refresh still runs afterwards regardless. It is on a worker thread
+    // and it leaves the list completely alone when it finds nothing new, so it
+    // costs nothing when the delta was right and quietly corrects the panel
+    // when it was not - which matters most on Windows, where the shell picks
+    // the final names and reports them back through the progress sink.
+    const QStringList removed = m_fileOps->lastRemovedPaths();
+    const QStringList created = m_fileOps->lastCreatedPaths();
+    if (success && m_fileOps->lastChangeIsKnown() && (!removed.isEmpty() || !created.isEmpty())) {
+        for (PanelController *panel : {m_leftPanel, m_rightPanel}) {
+            if (!panel || !panel->model()) {
+                continue;
+            }
+            // Paths outside a panel's folder are ignored by the model, so both
+            // panels can be handed the same lists.
+            panel->model()->applyKnownRemovals(removed);
+            panel->model()->applyKnownChanges(created);
+        }
+    }
+
     // Files changed; the set of drives did not.
     refreshPanels();
     if (!success && !message.isEmpty()) {

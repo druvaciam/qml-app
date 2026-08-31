@@ -631,6 +631,16 @@ ApplicationWindow {
     }
 
     function restoreActiveFocus() {
+        // A dialog closing must not pull focus out from under a dialog that
+        // opened on top of it. New Folder does exactly that: it calls into the
+        // controller, an error dialog appears, and then the New Folder dialog
+        // closes and hands focus back to the file list - leaving the error box
+        // on screen with no focus, so Enter navigated the list behind it
+        // instead of pressing OK.
+        if (anyModalOpen()) {
+            return
+        }
+
         if (appCtrl.activePanelIndex === 0) {
             leftPanel.fileListView.setFocus()
         } else {
@@ -724,6 +734,7 @@ ApplicationWindow {
     // Simple Alert / Info Modal
     Rectangle {
         id: messageDialog
+        objectName: "messageDialog"
         property string title: ""
         property string messageText: ""
         property bool isOpen: false

@@ -87,6 +87,16 @@ public:
     /// The source paths of the operation that just finished, whichever entry
     /// point started it (F5/F6, drag and drop, clipboard, conflict dialog).
     QStringList lastSourcePaths() const { return m_lastSourcePaths; }
+
+    /// What the last operation actually did to the file system, so the panels
+    /// can update the rows concerned instead of re-reading whole folders. A
+    /// delete of one file out of 14000 took 0 ms; the rescan behind it took
+    /// 189 ms.
+    ///
+    /// Empty means "not known" - the caller must fall back to a refresh.
+    QStringList lastRemovedPaths() const { return m_lastRemovedPaths; }
+    QStringList lastCreatedPaths() const { return m_lastCreatedPaths; }
+    bool lastChangeIsKnown() const { return m_lastChangeIsKnown; }
     bool nativeProgress() const { return m_nativeProgress; }
     bool progressVisible() const { return m_progressVisible; }
     bool progressIsItemCount() const { return m_progressIsItemCount; }
@@ -244,7 +254,18 @@ private:
     double m_progress = 0.0;
     QString m_statusMessage;
     QString m_lastError;
+    void beginDelta();
+    void noteRemoved(const QString &path);
+    void noteCreated(const QString &path);
+    void abandonDelta();
+
     QStringList m_lastSourcePaths;
+    QStringList m_lastRemovedPaths;
+    QStringList m_lastCreatedPaths;
+    /// False whenever an operation cannot say exactly what it touched, which is
+    /// the signal to fall back on a full refresh rather than guess.
+    bool m_lastChangeIsKnown = false;
+    QMutex m_deltaMutex;      // the worker thread writes these
     bool m_nativeProgress = false;
     bool m_progressVisible = false;
     bool m_progressIsItemCount = true;

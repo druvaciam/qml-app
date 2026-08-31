@@ -21,6 +21,7 @@
 #include <QFileSystemWatcher>
 #include <QTimer>
 #include <QSet>
+#include <QRegularExpression>
 #include <QtQml/qqmlregistration.h>
 
 struct FileItem {
@@ -150,6 +151,17 @@ public:
      */
     Q_INVOKABLE void refreshItem(const QString &filePath);
 
+    /// Applies a change the app already knows about, without going back to the
+    /// disk for the other 13999 files. Deleting one file out of 14000 used to
+    /// cost a full rescan - the delete itself took 0 ms and the refresh after
+    /// it took 189 ms, all of it re-reading rows we already had.
+    ///
+    /// Paths outside this folder are ignored, so both panels can be handed the
+    /// same list and each takes only what concerns it.
+    void applyKnownRemovals(const QStringList &paths);
+    /// Stats exactly these paths and inserts, updates or drops their rows.
+    void applyKnownChanges(const QStringList &paths);
+
     /**
      * @brief Hold back file-watcher reloads (not explicit ones).
      * A reload resets the model, which destroys and rebuilds every delegate. If
@@ -201,12 +213,34 @@ private:
     /// was already read. This is what runs on every keystroke.
     void rebuildVisibleItems(bool isNewPath, bool announceBefore = true, bool announceAfter = true);
     void setLoading(bool loading);
+
+    /// Keeps the listing for a folder we have already read, so stepping back
+    /// into it shows rows immediately instead of an empty panel. The rescan
+    /// still runs; the cache only decides what is on screen while it does.
+    void storeInCache(const QString &path, const QList<FileItem> &items);
+    void touchCache(const QString &path);
+    /// True when two listings describe the same folder contents. Selection is
+    /// deliberately not compared: it belongs to the user, not to the disk.
+    static bool listingsMatch(const QList<FileItem> &a, const QList<FileItem> &b);
     void sortInternal();
     void updateSelectionStats();
     /// Reads a folder into a plain list. Runs on a worker thread, so it takes
     /// everything it needs as arguments and touches no member state; it is a
     /// member only so it can reach the static formatters below.
     static QList<FileItem> scanDirectory(const QString &path, const QSet<QString> &selectedPaths);
+    /// Builds one row from one file. Shared by the full scan and the targeted
+    /// updates so a row can never be described two different ways.
+    static FileItem makeItem(const QFileInfo &info, bool selected);
+    /// The sort order, as one predicate. sortInternal uses it to sort; the
+    /// targeted insert uses it to find where a new row belongs.
+    bool itemLessThan(const FileItem &lhs, const FileItem &rhs) const;
+    /// Whether a row survives the current filter and hidden-files switch.
+    bool passesView(const FileItem &item, const QList<QRegularExpression> &patterns) const;
+    int indexOfPath(const QList<FileItem> &list, const QString &path) const;
+    bool belongsToCurrentFolder(const QString &path) const;
+    void insertVisibleSorted(const FileItem &item);
+    void removeVisibleAt(int row);
+    void finishDelta();
     static QString detectFileType(const QFileInfo &info);
     static QString formatSize(qint64 bytes, bool isDir);
     static QString formatPermissions(const QFileInfo &info);
@@ -222,6 +256,36 @@ private:
     QFutureWatcher<QList<FileItem>> *m_loadWatcher = nullptr;
     bool m_pendingIsNewPath = false;
     bool m_isLoading = false;
+    /// Whether the rows currently on screen came from the cache. If they did,
+    /// the rescan must not reset the model unless it found a difference.
+    bool m_servedFromCache = false;
+
+    QHash<QString, QList<FileItem>> m_listingCache;
+    QStringList m_cacheOrder;               // least recently used first
+    /// Generous on purpose. An entry costs a hash slot and a string; what
+    /// actually bounds the memory is the row budget below, so there is little
+    /// point being stingy with the count. A long browsing session keeps its
+    /// history rather than losing folders it will come back to.
+    static constexpr int kCacheFolders = 100;
+
+    /// Roughly 100 MB of cached rows.
+    ///
+    /// Measured rather than guessed: 100000 rows with names around 45
+    /// characters cost about 173 MB resident, so a little under 2 KB each -
+    /// mostly the eight separate string allocations per row, not the 232-byte
+    /// struct. Short names cost less, so the real figure lands under the
+    /// ceiling more often than over it.
+    ///
+    /// Turned into a row count on purpose. This is a ceiling, not an accounting
+    /// system; measuring each listing exactly would mean walking every row on
+    /// every store, which is precisely the O(n) work the deltas exist to avoid.
+    static constexpr qint64 kBytesPerRow = 2048;
+    static constexpr int kCacheRowBudget =
+        static_cast<int>((100LL * 1024 * 1024) / kBytesPerRow);   // ~51200 rows
+    /// Past this many changed rows, rebuilding the visible list in one go beats
+    /// that many individual insertions - each of which shifts the rest of the
+    /// list. Still no disk access either way.
+    static constexpr int kSurgicalLimit = 32;
     QList<FileItem> m_items;
     QFileSystemWatcher m_watcher;
     // A directory being written to fires directoryChanged once per file. Each

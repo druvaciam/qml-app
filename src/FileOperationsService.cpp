@@ -16,6 +16,25 @@ enum class ShellOp { Copy, Move, Delete, Trash, Rename };
 
 using ShellReporter = std::function<void(const QString &, int, int)>;
 using ShellCancelCheck = std::function<bool()>;
+using ShellPathNoter = std::function<void(const QString &)>;
+
+/// The shell picks the final name itself when it resolves a collision, so the
+/// only way to know what a copy actually produced is to be told. IFileOperation
+/// hands the newly created item to the Post* callbacks; this turns it into a
+/// path we can hand to the panels.
+static QString shellItemPath(IShellItem *item)
+{
+    if (!item) {
+        return QString();
+    }
+    LPWSTR raw = nullptr;
+    QString path;
+    if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &raw)) && raw) {
+        path = QDir::fromNativeSeparators(QString::fromWCharArray(raw));
+        CoTaskMemFree(raw);
+    }
+    return path;
+}
 
 /**
  * Receives progress from IFileOperation so the app can draw its own dialog.
@@ -28,8 +47,10 @@ using ShellCancelCheck = std::function<bool()>;
 class ShellProgressSink final : public IFileOperationProgressSink
 {
 public:
-    ShellProgressSink(ShellReporter reporter, ShellCancelCheck cancelled)
-        : m_report(std::move(reporter)), m_cancelled(std::move(cancelled)) {}
+    ShellProgressSink(ShellReporter reporter, ShellCancelCheck cancelled,
+                      ShellPathNoter created, ShellPathNoter removed)
+        : m_report(std::move(reporter)), m_cancelled(std::move(cancelled)),
+          m_noteCreated(std::move(created)), m_noteRemoved(std::move(removed)) {}
 
     IFACEMETHODIMP QueryInterface(REFIID riid, void **ppv) override
     {
@@ -58,18 +79,41 @@ public:
         return abortIfCancelled();
     }
 
-    IFACEMETHODIMP PostCopyItem(DWORD, IShellItem *item, IShellItem *, LPCWSTR, HRESULT, IShellItem *) override
-    { noteItem(item); return S_OK; }
-    IFACEMETHODIMP PostMoveItem(DWORD, IShellItem *item, IShellItem *, LPCWSTR, HRESULT, IShellItem *) override
-    { noteItem(item); return S_OK; }
-    IFACEMETHODIMP PostDeleteItem(DWORD, IShellItem *item, HRESULT, IShellItem *) override
-    { noteItem(item); return S_OK; }
+    IFACEMETHODIMP PostCopyItem(DWORD, IShellItem *item, IShellItem *, LPCWSTR, HRESULT hr,
+                                IShellItem *created) override
+    { noteItem(item); recordCreated(hr, created); return S_OK; }
+    IFACEMETHODIMP PostMoveItem(DWORD, IShellItem *item, IShellItem *, LPCWSTR, HRESULT hr,
+                                IShellItem *created) override
+    {
+        noteItem(item);
+        recordCreated(hr, created);
+        if (SUCCEEDED(hr) && m_noteRemoved) {
+            m_noteRemoved(shellItemPath(item));
+        }
+        return S_OK;
+    }
+    IFACEMETHODIMP PostDeleteItem(DWORD, IShellItem *item, HRESULT hr, IShellItem *) override
+    {
+        noteItem(item);
+        if (SUCCEEDED(hr) && m_noteRemoved) {
+            m_noteRemoved(shellItemPath(item));
+        }
+        return S_OK;
+    }
 
     // The rest of the interface has to exist, but there is nothing to report.
     IFACEMETHODIMP StartOperations() override { return S_OK; }
     IFACEMETHODIMP FinishOperations(HRESULT) override { return S_OK; }
     IFACEMETHODIMP PreRenameItem(DWORD, IShellItem *, LPCWSTR) override { return S_OK; }
-    IFACEMETHODIMP PostRenameItem(DWORD, IShellItem *, LPCWSTR, HRESULT, IShellItem *) override { return S_OK; }
+    IFACEMETHODIMP PostRenameItem(DWORD, IShellItem *item, LPCWSTR, HRESULT hr,
+                                  IShellItem *created) override
+    {
+        if (SUCCEEDED(hr) && m_noteRemoved) {
+            m_noteRemoved(shellItemPath(item));
+        }
+        recordCreated(hr, created);
+        return S_OK;
+    }
     // Returning a failure from a Pre* callback stops IFileOperation. This is the
     // only way to cancel it: the service's cancel flag is not something the shell
     // ever looks at, so before this the Cancel button did nothing at all.
@@ -77,7 +121,9 @@ public:
     IFACEMETHODIMP PreCopyItem(DWORD, IShellItem *, IShellItem *, LPCWSTR) override { return abortIfCancelled(); }
     IFACEMETHODIMP PreDeleteItem(DWORD, IShellItem *) override { return abortIfCancelled(); }
     IFACEMETHODIMP PreNewItem(DWORD, IShellItem *, LPCWSTR) override { return S_OK; }
-    IFACEMETHODIMP PostNewItem(DWORD, IShellItem *, LPCWSTR, LPCWSTR, DWORD, HRESULT, IShellItem *) override { return S_OK; }
+    IFACEMETHODIMP PostNewItem(DWORD, IShellItem *, LPCWSTR, LPCWSTR, DWORD, HRESULT hr,
+                               IShellItem *created) override
+    { recordCreated(hr, created); return S_OK; }
     IFACEMETHODIMP ResetTimer() override { return S_OK; }
     IFACEMETHODIMP PauseTimer() override { return S_OK; }
     IFACEMETHODIMP ResumeTimer() override { return S_OK; }
@@ -86,6 +132,13 @@ private:
     HRESULT abortIfCancelled() const
     {
         return (m_cancelled && m_cancelled()) ? E_ABORT : S_OK;
+    }
+
+    void recordCreated(HRESULT hr, IShellItem *created)
+    {
+        if (SUCCEEDED(hr) && created && m_noteCreated) {
+            m_noteCreated(shellItemPath(created));
+        }
     }
 
     void noteItem(IShellItem *item)
@@ -103,6 +156,8 @@ private:
     LONG m_ref = 1;
     ShellReporter m_report;
     ShellCancelCheck m_cancelled;
+    ShellPathNoter m_noteCreated;
+    ShellPathNoter m_noteRemoved;
     QString m_current;
     int m_total = 0;
     int m_soFar = 0;
@@ -110,7 +165,8 @@ private:
 
 static bool runWindowsShellOp(HWND hwndOwner, ShellOp op, const QStringList &sources, const QString &destDir,
                               QString &errorMessage, int policy = 0, ShellReporter reporter = {},
-                              ShellCancelCheck isCancelled = {})
+                              ShellCancelCheck isCancelled = {},
+                              ShellPathNoter noteCreated = {}, ShellPathNoter noteRemoved = {})
 {
     HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
     bool needUninit = SUCCEEDED(hr);
@@ -145,7 +201,8 @@ static bool runWindowsShellOp(HWND hwndOwner, ShellOp op, const QStringList &sou
     ShellProgressSink *sink = nullptr;
     DWORD sinkCookie = 0;
     if (reporter) {
-        sink = new ShellProgressSink(std::move(reporter), isCancelled);
+        sink = new ShellProgressSink(std::move(reporter), isCancelled,
+                                     std::move(noteCreated), std::move(noteRemoved));
         if (FAILED(pfo->Advise(sink, &sinkCookie))) {
             sink->Release();
             sink = nullptr;
@@ -267,6 +324,32 @@ FileOperationsService::~FileOperationsService()
 {
     cancel();
     m_futureWatcher.waitForFinished();
+}
+
+void FileOperationsService::beginDelta()
+{
+    QMutexLocker lock(&m_deltaMutex);
+    m_lastRemovedPaths.clear();
+    m_lastCreatedPaths.clear();
+    m_lastChangeIsKnown = true;
+}
+
+void FileOperationsService::noteRemoved(const QString &path)
+{
+    QMutexLocker lock(&m_deltaMutex);
+    m_lastRemovedPaths << path;
+}
+
+void FileOperationsService::noteCreated(const QString &path)
+{
+    QMutexLocker lock(&m_deltaMutex);
+    m_lastCreatedPaths << path;
+}
+
+void FileOperationsService::abandonDelta()
+{
+    QMutexLocker lock(&m_deltaMutex);
+    m_lastChangeIsKnown = false;
 }
 
 void FileOperationsService::setBusy(bool busy)
@@ -495,6 +578,7 @@ bool FileOperationsService::copyRecursively(const QString &srcPath, const QStrin
             error = QStringLiteral("Cannot create folder '%1' (Access denied or invalid path)").arg(dstPath);
             return false;
         }
+        noteCreated(dstPath);
 
         for (const auto &entry : entries) {
             if (m_cancelRequested.loadAcquire()) return false;
@@ -542,6 +626,7 @@ bool FileOperationsService::copyRecursively(const QString &srcPath, const QStrin
         // QFile::copy already carries the permissions across; only the
         // modification date needs restoring.
         preserveModifiedTime(dstPath, srcInfo.lastModified());
+        noteCreated(dstPath);
         return true;
     }
 }
@@ -562,6 +647,8 @@ bool FileOperationsService::moveRecursively(const QString &srcPath, const QStrin
     // Plain rename only when nothing is in the way. The destination is never
     // removed up front: a later failure would leave it destroyed for nothing.
     if (!QFile::exists(dstPath) && QFile::rename(srcPath, dstPath)) {
+        noteRemoved(srcPath);
+        noteCreated(dstPath);
         return true;
     }
 
@@ -822,9 +909,13 @@ void FileOperationsService::copyItems(const QStringList &sourcePaths, const QStr
     setProgressIsItemCount(false);
     startOperation(QStringLiteral("Copying files..."), QStringLiteral("Preparing copy..."), [this, hwnd, sources, destinationDir, policy]() {
         QString err;
+        beginDelta();
         auto reporter = [this](const QString &name, int done, int total) { updateProgress(name, done, total); };
         auto cancelled = [this]() { return m_cancelRequested.loadAcquire() != 0; };
-        bool ok = runWindowsShellOp(hwnd, ShellOp::Copy, sources, destinationDir, err, policy, reporter, cancelled);
+        auto created = [this](const QString &p) { noteCreated(p); };
+        auto removed = [this](const QString &p) { noteRemoved(p); };
+        bool ok = runWindowsShellOp(hwnd, ShellOp::Copy, sources, destinationDir, err, policy, reporter,
+                                    cancelled, created, removed);
         if (!ok && err != QStringLiteral("Operation cancelled by user.")) {
             // Fallback manual copy if shell operation failed
             QMetaObject::invokeMethod(this, [this]() { setProgressIsItemCount(true); }, Qt::QueuedConnection);
@@ -839,8 +930,13 @@ void FileOperationsService::copyItems(const QStringList &sourcePaths, const QStr
     setProgressIsItemCount(true);
     startOperation(QStringLiteral("Copying files..."), QStringLiteral("Preparing copy..."), [this, sources, destinationDir, policy]() {
         QString err;
+        beginDelta();
         bool ok = runPortableCopy(sources, destinationDir, policy, err);
-        if (!ok) m_lastError = err;
+        if (!ok) {
+            m_lastError = err;
+            // A half-finished copy is not something we can describe exactly.
+            abandonDelta();
+        }
         return ok;
     });
 #endif
@@ -885,9 +981,13 @@ void FileOperationsService::moveItems(const QStringList &sourcePaths, const QStr
     setProgressIsItemCount(false);
     startOperation(QStringLiteral("Moving files..."), QStringLiteral("Preparing move..."), [this, hwnd, sources, destinationDir, policy]() {
         QString err;
+        beginDelta();
         auto reporter = [this](const QString &name, int done, int total) { updateProgress(name, done, total); };
         auto cancelled = [this]() { return m_cancelRequested.loadAcquire() != 0; };
-        bool ok = runWindowsShellOp(hwnd, ShellOp::Move, sources, destinationDir, err, policy, reporter, cancelled);
+        auto created = [this](const QString &p) { noteCreated(p); };
+        auto removed = [this](const QString &p) { noteRemoved(p); };
+        bool ok = runWindowsShellOp(hwnd, ShellOp::Move, sources, destinationDir, err, policy, reporter,
+                                    cancelled, created, removed);
         if (!ok) m_lastError = err;
         return ok;
     });
@@ -966,6 +1066,7 @@ void FileOperationsService::deleteItems(const QStringList &paths, bool permanent
         int credited = 0;
         QString err;
         QStringList fallbackPaths;
+        beginDelta();
 
         for (int i = 0; i < paths.size(); ++i) {
             if (m_cancelRequested.loadAcquire()) return false;
@@ -1007,6 +1108,12 @@ void FileOperationsService::deleteItems(const QStringList &paths, bool permanent
                 }
             }
 
+            // Anything not queued for the shell fallback is gone, and the panel
+            // can drop its row at once instead of waiting for a rescan.
+            if (fallbackPaths.isEmpty() || fallbackPaths.constLast() != path) {
+                noteRemoved(path);
+            }
+
             credited += counts.at(i);
             if (processed < credited) processed = credited;
             updateProgress(info.fileName(), processed, total);
@@ -1015,6 +1122,9 @@ void FileOperationsService::deleteItems(const QStringList &paths, bool permanent
 #ifdef Q_OS_WIN
         // If direct deletion failed (e.g. system folder requiring UAC elevation), fallback to Windows Shell IFileOperation
         if (!fallbackPaths.isEmpty() && !m_cancelRequested.loadAcquire()) {
+            // The shell fallback runs without a progress sink, so what it
+            // manages to remove is not reported back. Fall back to a refresh.
+            abandonDelta();
             HWND hwnd = GetForegroundWindow();
             // Named apart from the outer `err` on purpose. This is the shell's
             // account of its own retry; the outer one records why the direct
@@ -1030,10 +1140,12 @@ void FileOperationsService::deleteItems(const QStringList &paths, bool permanent
             }
         } else if (!fallbackPaths.isEmpty()) {
             allOk = false;
+            abandonDelta();
         }
 #else
         if (!fallbackPaths.isEmpty()) {
             allOk = false;
+            abandonDelta();
             // There is no shell retry on this platform, so the reason recorded
             // above is the only accurate account of what went wrong - and it
             // names the offending item, which "selected items" cannot.
@@ -1060,6 +1172,7 @@ bool FileOperationsService::createDirectory(const QString &parentPath, const QSt
     }
 
     m_lastSourcePaths.clear();
+    beginDelta();
 
     QDir parentDir(parentPath);
     if (!parentDir.exists()) {
@@ -1078,6 +1191,7 @@ bool FileOperationsService::createDirectory(const QString &parentPath, const QSt
 
     bool ok = parentDir.mkdir(name);
     if (ok) {
+        noteCreated(parentDir.filePath(name));
         emit operationCompleted(true, QStringLiteral("Created folder: %1").arg(name));
     } else {
         emit operationError(QStringLiteral("Could not create \"%1\" here (permission denied or the name is not allowed).").arg(name));
@@ -1127,8 +1241,14 @@ bool FileOperationsService::renameItem(const QString &oldPath, const QString &ne
 {
     m_lastSourcePaths.clear();
     QString err;
+    beginDelta();
     bool ok = performRename(oldPath, newName, &err);
     if (ok) {
+        // A rename is one row leaving and one arriving, which the panel can do
+        // without re-reading the folder around it. performRename is static, so
+        // the delta is recorded here where there is an object to record on.
+        noteRemoved(oldPath);
+        noteCreated(QFileInfo(oldPath).dir().filePath(newName.trimmed()));
         emit operationCompleted(true, QString("Renamed to: %1").arg(newName.trimmed()));
     } else {
         emit operationError(err.isEmpty() ? QString("Failed to rename item to: %1").arg(newName) : err);

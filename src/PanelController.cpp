@@ -38,7 +38,12 @@ PanelController::PanelController(QObject *parent)
         }
         const QString wanted = m_pendingSelectName;
         m_pendingSelectName.clear();
-        selectItemByName(wanted);
+        if (m_model->findItemIndex(wanted) >= 0) {
+            selectItemByName(wanted);
+        } else {
+            // Renamed, deleted, or filtered away while we were inside it.
+            setCurrentIndex(0);
+        }
     });
 
     refreshDrives();
@@ -136,7 +141,11 @@ void PanelController::navigateUp()
         m_pendingSelectName = oldDirName;
         navigateTo(parent);
         setIsActive(true);
-        setCurrentIndex(0);
+        // Deliberately no setCurrentIndex(0) here. When the parent folder is
+        // already cached the load finishes inside navigateTo(), so the cursor
+        // has been put on the folder we came out of by the time this line would
+        // run - and setting it to 0 dropped it back onto the ".." row. Where
+        // the folder cannot be found, the handler below parks it at 0 instead.
     }
 }
 

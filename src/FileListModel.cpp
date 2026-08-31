@@ -198,6 +198,276 @@ void FileListModel::clearFilterNoReload()
     }
 }
 
+/// Defined further down, next to the code that reads the folder.
+static QList<QRegularExpression> compileFilter(const QString &filterText);
+
+/// Case-insensitive on Windows, exact elsewhere - the same rule the rest of the
+/// app compares paths by.
+static bool samePathText(const QString &a, const QString &b)
+{
+#ifdef Q_OS_WIN
+    return QDir::cleanPath(a).compare(QDir::cleanPath(b), Qt::CaseInsensitive) == 0;
+#else
+    return QDir::cleanPath(a) == QDir::cleanPath(b);
+#endif
+}
+
+bool FileListModel::belongsToCurrentFolder(const QString &path) const
+{
+    if (path.isEmpty() || m_currentPath.isEmpty()) {
+        return false;
+    }
+    return samePathText(QFileInfo(path).absolutePath(), m_currentPath);
+}
+
+/// One comparable form of a path, computed once and then compared as a plain
+/// string. The old comparison ran QDir::cleanPath over both sides on every
+/// single test, which is two allocations per comparison - fine in a loop of
+/// ten, ruinous in a loop of forty-seven million.
+static QString pathKey(const QString &path)
+{
+#ifdef Q_OS_WIN
+    return QDir::cleanPath(path).toLower();
+#else
+    return QDir::cleanPath(path);
+#endif
+}
+
+int FileListModel::indexOfPath(const QList<FileItem> &list, const QString &path) const
+{
+    const QString wanted = pathKey(path);
+    for (int i = 0; i < static_cast<int>(list.size()); ++i) {
+        if (pathKey(list.at(i).fullPath) == wanted) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+bool FileListModel::passesView(const FileItem &item,
+                               const QList<QRegularExpression> &patterns) const
+{
+    if (!m_showHidden && item.isHidden) {
+        return false;
+    }
+    if (patterns.isEmpty()) {
+        return true;
+    }
+    for (const QRegularExpression &re : patterns) {
+        if (re.match(item.name).hasMatch()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void FileListModel::insertVisibleSorted(const FileItem &item)
+{
+    // The ".." row is not part of the ordering and always stays at the top.
+    int low = (!m_items.isEmpty() && m_items.first().isParent) ? 1 : 0;
+    int high = static_cast<int>(m_items.size());
+    while (low < high) {
+        const int mid = low + (high - low) / 2;
+        if (itemLessThan(m_items.at(mid), item)) {
+            low = mid + 1;
+        } else {
+            high = mid;
+        }
+    }
+    beginInsertRows(QModelIndex(), low, low);
+    m_items.insert(low, item);
+    endInsertRows();
+}
+
+void FileListModel::removeVisibleAt(int row)
+{
+    beginRemoveRows(QModelIndex(), row, row);
+    m_items.removeAt(row);
+    endRemoveRows();
+}
+
+void FileListModel::finishDelta()
+{
+    storeInCache(m_currentPath, m_allItems);
+    emit countChanged();
+    updateSelectionStats();
+}
+
+/// Rows in m_items for the paths we care about, found in a single pass.
+/// Looking each one up separately meant re-walking the whole list per path.
+static QHash<QString, int> visibleRowsFor(const QList<FileItem> &items,
+                                          const QSet<QString> &keys)
+{
+    QHash<QString, int> rows;
+    rows.reserve(keys.size());
+    for (int i = 0; i < static_cast<int>(items.size()); ++i) {
+        if (items.at(i).isParent) {
+            continue;
+        }
+        const QString k = pathKey(items.at(i).fullPath);
+        if (keys.contains(k)) {
+            rows.insert(k, i);
+        }
+    }
+    return rows;
+}
+
+void FileListModel::applyKnownRemovals(const QStringList &paths)
+{
+    QSet<QString> keys;
+    for (const QString &p : paths) {
+        if (belongsToCurrentFolder(p)) {
+            keys.insert(pathKey(p));
+        }
+    }
+    if (keys.isEmpty()) {
+        return;
+    }
+
+    // One pass over the full listing rather than one pass per removed path.
+    QList<FileItem> kept;
+    kept.reserve(m_allItems.size());
+    for (const FileItem &it : m_allItems) {
+        if (!keys.contains(pathKey(it.fullPath))) {
+            kept.append(it);
+        }
+    }
+    const int removedCount = static_cast<int>(m_allItems.size() - kept.size());
+    m_allItems = kept;
+    if (removedCount == 0) {
+        return;
+    }
+
+    if (removedCount > kSurgicalLimit) {
+        // One reset beats hundreds of individual row removals, and still costs
+        // no disk access at all.
+        rebuildVisibleItems(false, true, true);
+        storeInCache(m_currentPath, m_allItems);
+        return;
+    }
+
+    const QHash<QString, int> rows = visibleRowsFor(m_items, keys);
+    QList<int> doomed = rows.values();
+    // Highest row first, so removing one does not shift the next.
+    std::sort(doomed.begin(), doomed.end(), std::greater<int>());
+    for (int row : doomed) {
+        removeVisibleAt(row);
+    }
+    finishDelta();
+}
+
+void FileListModel::applyKnownChanges(const QStringList &paths)
+{
+    QStringList mine;
+    QStringList mineKeys;
+    QSet<QString> keySet;
+    for (const QString &p : paths) {
+        if (!belongsToCurrentFolder(p)) {
+            continue;
+        }
+        const QString k = pathKey(p);
+        if (keySet.contains(k)) {
+            continue;                       // the same file named twice
+        }
+        mine << p;
+        mineKeys << k;
+        keySet.insert(k);
+    }
+    if (mine.isEmpty()) {
+        return;
+    }
+
+    // Index the full listing once. Looking each path up by scanning was what
+    // made pasting 1644 files into a folder of 28486 appear to hang: 47 million
+    // path comparisons, each allocating.
+    QHash<QString, int> allIndex;
+    allIndex.reserve(m_allItems.size());
+    for (int i = 0; i < static_cast<int>(m_allItems.size()); ++i) {
+        allIndex.insert(pathKey(m_allItems.at(i).fullPath), i);
+    }
+
+    QSet<QString> vanished;
+    for (int k = 0; k < mine.size(); ++k) {
+        QFileInfo info(mine.at(k));
+        info.refresh();
+        const int idx = allIndex.value(mineKeys.at(k), -1);
+
+        if (!info.exists()) {
+            // A "change" that turned out to be a disappearance - a move away,
+            // or something removed between the operation finishing and this
+            // running. Treated as a removal rather than ignored.
+            if (idx >= 0) {
+                vanished.insert(mineKeys.at(k));
+            }
+            continue;
+        }
+
+        // A row that was already selected stays selected through an overwrite.
+        const bool wasSelected = (idx >= 0) && m_allItems.at(idx).isSelected;
+        const FileItem item = makeItem(info, wasSelected);
+
+        if (idx >= 0) {
+            m_allItems[idx] = item;
+        } else {
+            m_allItems.append(item);
+            allIndex.insert(mineKeys.at(k), static_cast<int>(m_allItems.size()) - 1);
+        }
+    }
+
+    if (!vanished.isEmpty()) {
+        QList<FileItem> kept;
+        kept.reserve(m_allItems.size());
+        for (const FileItem &it : m_allItems) {
+            if (!vanished.contains(pathKey(it.fullPath))) {
+                kept.append(it);
+            }
+        }
+        m_allItems = kept;
+    }
+
+    // A big batch, or anything that vanished, is cheaper to redraw in one go.
+    if (mine.size() > kSurgicalLimit || !vanished.isEmpty()) {
+        rebuildVisibleItems(false, true, true);
+        storeInCache(m_currentPath, m_allItems);
+        return;
+    }
+
+    const QList<QRegularExpression> patterns = compileFilter(m_filterPattern);
+    const QHash<QString, int> rows = visibleRowsFor(m_items, keySet);
+
+    // Worked out first, applied afterwards: removing rows shifts every index
+    // after them, so deciding and acting in the same pass would use stale rows.
+    QList<int> toRemove;
+    QList<FileItem> toInsert;
+    for (int k = 0; k < mine.size(); ++k) {
+        const int idx = allIndex.value(mineKeys.at(k), -1);
+        if (idx < 0) {
+            continue;
+        }
+        const FileItem &item = m_allItems.at(idx);
+        const int row = rows.value(mineKeys.at(k), -1);
+        const bool shouldShow = passesView(item, patterns);
+
+        if (row >= 0) {
+            toRemove << row;
+        }
+        if (shouldShow) {
+            // Re-inserted rather than edited in place because its sort key may
+            // have moved it somewhere else entirely.
+            toInsert << item;
+        }
+    }
+
+    std::sort(toRemove.begin(), toRemove.end(), std::greater<int>());
+    for (int row : toRemove) {
+        removeVisibleAt(row);
+    }
+    for (const FileItem &item : toInsert) {
+        insertVisibleSorted(item);
+    }
+    finishDelta();
+}
+
 void FileListModel::refreshItem(const QString &filePath)
 {
     if (filePath.isEmpty() || m_items.isEmpty()) {
@@ -580,6 +850,95 @@ void FileListModel::setReloadSuspended(bool suspended)
     }
 }
 
+void FileListModel::touchCache(const QString &path)
+{
+    m_cacheOrder.removeAll(path);
+    m_cacheOrder.append(path);
+}
+
+/// What one row costs in memory, deliberately on the generous side.
+///
+/// Measured against real resident memory: 100000 rows with names around 45
+/// characters came to about 173 MB, or ~1770 bytes each, while adding up the
+/// struct and the characters in its strings gives only ~960. The rest is
+/// per-allocation overhead - eight separate string blocks per row, each rounded
+/// up by the allocator - plus slack in the list itself. Rather than pretend the
+/// naive sum is the truth, it is doubled, which lands close to what was
+/// measured. A cache budget that quietly overshoots by two is worse than one
+/// that is honest about being an estimate.
+void FileListModel::storeInCache(const QString &path, const QList<FileItem> &items)
+{
+    if (path.isEmpty()) {
+        return;
+    }
+
+    // A folder that alone exceeds the whole budget cannot be cached: storing it
+    // would evict everything else and then, still over budget, evict itself.
+    // One 200000-file folder emptied the cache of all eight others and gained
+    // nothing. It is skipped instead, and any stale copy of it is dropped.
+    if (items.size() > kCacheRowBudget) {
+        m_listingCache.remove(path);
+        m_cacheOrder.removeAll(path);
+        return;
+    }
+
+    m_listingCache.insert(path, items);
+    touchCache(path);
+
+    // constFind rather than value(): value() hands back a copy of the list,
+    // which is only a reference count, but there is no reason to pay it a
+    // hundred times per store.
+    int rows = 0;
+    for (const QString &p : m_cacheOrder) {
+        const auto found = m_listingCache.constFind(p);
+        if (found != m_listingCache.constEnd()) {
+            rows += found.value().size();
+        }
+    }
+
+    // Never evicts the entry just stored - it is the last one in the order, and
+    // stopping at one leaves it alone.
+    while (m_cacheOrder.size() > 1
+           && (m_cacheOrder.size() > kCacheFolders || rows > kCacheRowBudget)) {
+        const QString oldest = m_cacheOrder.takeFirst();
+        const auto found = m_listingCache.constFind(oldest);
+        if (found != m_listingCache.constEnd()) {
+            rows -= found.value().size();
+        }
+        m_listingCache.remove(oldest);
+    }
+}
+
+bool FileListModel::listingsMatch(const QList<FileItem> &a, const QList<FileItem> &b)
+{
+    if (a.size() != b.size()) {
+        return false;
+    }
+
+    // Compared by path rather than position: the order entryInfoList hands
+    // things back in is not promised to be stable, and a reshuffle is not a
+    // change the user should see the list flicker for.
+    QHash<QString, const FileItem *> byPath;
+    byPath.reserve(b.size());
+    for (const FileItem &it : b) {
+        byPath.insert(it.fullPath, &it);
+    }
+    for (const FileItem &it : a) {
+        const auto found = byPath.constFind(it.fullPath);
+        if (found == byPath.constEnd()) {
+            return false;
+        }
+        const FileItem *other = found.value();
+        if (other->isDir != it.isDir
+            || other->size != it.size
+            || other->lastModified != it.lastModified
+            || other->isHidden != it.isHidden) {
+            return false;
+        }
+    }
+    return true;
+}
+
 void FileListModel::setLoading(bool loading)
 {
     if (m_isLoading != loading) {
@@ -613,9 +972,25 @@ void FileListModel::loadDirectory()
     // screen, and those rows stay valid until the new ones arrive. Blanking
     // them made a one-file paste into a large folder look like the whole
     // listing had vanished and come back.
+    m_servedFromCache = false;
     if (isNewPath) {
-        m_allItems.clear();
-        rebuildVisibleItems(isNewPath, false, false);
+        const auto cached = m_listingCache.constFind(m_currentPath);
+        if (cached != m_listingCache.constEnd()) {
+            // Been here before. Put the rows back straight away and let the
+            // rescan below decide whether they were still right. Nothing is
+            // blanked and no "Reading folder" notice appears, because there is
+            // something to look at the whole time.
+            m_allItems = cached.value();
+            for (FileItem &it : m_allItems) {
+                it.isSelected = false;     // selection does not survive leaving
+            }
+            touchCache(m_currentPath);
+            m_servedFromCache = true;
+            rebuildVisibleItems(isNewPath, false, true);
+        } else {
+            m_allItems.clear();
+            rebuildVisibleItems(isNewPath, false, false);
+        }
     }
 
     setLoading(true);
@@ -626,7 +1001,32 @@ void FileListModel::loadDirectory()
             if (!m_loadWatcher->future().isFinished()) {
                 return;
             }
-            m_allItems = m_loadWatcher->result();
+            const QList<FileItem> fresh = m_loadWatcher->result();
+            storeInCache(m_currentPath, fresh);
+
+            // Rows are already on screen in two cases: they came from the cache,
+            // or this was a refresh of the folder being looked at. In both, a
+            // rebuild costs the scroll position and the cursor, so it is only
+            // worth doing if the folder actually differs from what is shown.
+            const bool rowsAlreadyShowing = m_servedFromCache || !m_pendingIsNewPath;
+            if (rowsAlreadyShowing) {
+                if (listingsMatch(m_allItems, fresh)) {
+                    m_servedFromCache = false;
+                    setLoading(false);
+                    return;
+                }
+                // Something changed while we were away. Announce a fresh pair so
+                // the view saves where the user is now, not where they were when
+                // the load started.
+                emit beforeDirectoryReset(false);
+                m_allItems = fresh;
+                m_servedFromCache = false;
+                rebuildVisibleItems(false, false, true);
+                setLoading(false);
+                return;
+            }
+
+            m_allItems = fresh;
             rebuildVisibleItems(m_pendingIsNewPath, false, true);
             setLoading(false);
         });
@@ -682,6 +1082,29 @@ static QList<QRegularExpression> compileFilter(const QString &filterText)
 /// formatters it calls are static and stateless. Reading a folder of 14000
 /// files costs upwards of a quarter of a second, and doing that on the GUI
 /// thread froze the window outright for as long as it took.
+FileItem FileListModel::makeItem(const QFileInfo &info, bool selected)
+{
+    FileItem item;
+    item.name = info.fileName();
+    item.fullPath = info.absoluteFilePath();
+    item.isDir = info.isDir();
+    item.isParent = false;
+    item.isHidden = info.isHidden() || info.fileName().startsWith(QLatin1Char('.'));
+    item.isExecutable = info.isExecutable() && !item.isDir;
+    item.size = item.isDir ? 0 : info.size();
+    item.formattedSize = FileListModel::formatSize(item.size, item.isDir);
+    item.extension = item.isDir ? QString() : info.suffix().toLower();
+    // Folders are not split at a dot: a folder called "my.stuff" is named
+    // that, it does not have an extension.
+    item.baseName = item.isDir ? item.name : info.completeBaseName();
+    item.lastModified = info.lastModified();
+    item.formattedModified = item.lastModified.toString(QStringLiteral("yyyy-MM-dd HH:mm"));
+    item.fileType = FileListModel::detectFileType(info);
+    item.permissions = FileListModel::formatPermissions(info);
+    item.isSelected = selected;
+    return item;
+}
+
 QList<FileItem> FileListModel::scanDirectory(const QString &path, const QSet<QString> &selectedPaths)
 {
     QList<FileItem> out;
@@ -708,26 +1131,7 @@ QList<FileItem> FileListModel::scanDirectory(const QString &path, const QSet<QSt
             continue;
         }
 
-        FileItem item;
-        item.name = info.fileName();
-        item.fullPath = info.absoluteFilePath();
-        item.isDir = info.isDir();
-        item.isParent = false;
-        item.isHidden = info.isHidden() || info.fileName().startsWith(QLatin1Char('.'));
-        item.isExecutable = info.isExecutable() && !item.isDir;
-        item.size = item.isDir ? 0 : info.size();
-        item.formattedSize = FileListModel::formatSize(item.size, item.isDir);
-        item.extension = item.isDir ? QString() : info.suffix().toLower();
-        // Folders are not split at a dot: a folder called "my.stuff" is named
-        // that, it does not have an extension.
-        item.baseName = item.isDir ? item.name : info.completeBaseName();
-        item.lastModified = info.lastModified();
-        item.formattedModified = item.lastModified.toString(QStringLiteral("yyyy-MM-dd HH:mm"));
-        item.fileType = FileListModel::detectFileType(info);
-        item.permissions = FileListModel::formatPermissions(info);
-        item.isSelected = selectedPaths.contains(item.fullPath);
-
-        out.append(item);
+        out.append(makeItem(info, selectedPaths.contains(info.absoluteFilePath())));
     }
     return out;
 }
@@ -898,6 +1302,41 @@ static int compareByName(const FileItem &a, const FileItem &b)
     return a.name.compare(b.name, Qt::CaseInsensitive);
 }
 
+bool FileListModel::itemLessThan(const FileItem &lhs, const FileItem &rhs) const
+{
+    // Directories always first, in both sort directions
+    if (lhs.isDir != rhs.isDir) {
+        return lhs.isDir > rhs.isDir;
+    }
+
+    // Swap the operands for a descending sort rather than negating the result:
+    // negating would return true for two equal items in both directions, which
+    // is not a strict weak ordering and is undefined behaviour for stable_sort.
+    const FileItem &a = m_sortAscending ? lhs : rhs;
+    const FileItem &b = m_sortAscending ? rhs : lhs;
+
+    switch (m_sortColumn) {
+    case SortByExt:
+        if (a.extension != b.extension) {
+            return compareNatural(a.extension, b.extension) < 0;
+        }
+        return compareByName(a, b) < 0;
+    case SortBySize:
+        if (a.size != b.size) {
+            return a.size < b.size;
+        }
+        return compareByName(a, b) < 0;
+    case SortByDate:
+        if (a.lastModified != b.lastModified) {
+            return a.lastModified < b.lastModified;
+        }
+        return compareByName(a, b) < 0;
+    case SortByName:
+    default:
+        return compareByName(a, b) < 0;
+    }
+}
+
 void FileListModel::sortInternal()
 {
     if (m_items.isEmpty()) {
@@ -917,39 +1356,10 @@ void FileListModel::sortInternal()
     auto beginIter = m_items.begin() + startIndex;
     auto endIter = m_items.end();
 
-    std::stable_sort(beginIter, endIter, [this](const FileItem &lhs, const FileItem &rhs) {
-        // Directories always first, in both sort directions
-        if (lhs.isDir != rhs.isDir) {
-            return lhs.isDir > rhs.isDir;
-        }
-
-        // Swap the operands for a descending sort rather than negating the result:
-        // negating would return true for two equal items in both directions, which
-        // is not a strict weak ordering and is undefined behaviour for stable_sort.
-        const FileItem &a = m_sortAscending ? lhs : rhs;
-        const FileItem &b = m_sortAscending ? rhs : lhs;
-
-        switch (m_sortColumn) {
-        case SortByExt:
-            if (a.extension != b.extension) {
-                return compareNatural(a.extension, b.extension) < 0;
-            }
-            return compareByName(a, b) < 0;
-        case SortBySize:
-            if (a.size != b.size) {
-                return a.size < b.size;
-            }
-            return compareByName(a, b) < 0;
-        case SortByDate:
-            if (a.lastModified != b.lastModified) {
-                return a.lastModified < b.lastModified;
-            }
-            return compareByName(a, b) < 0;
-        case SortByName:
-        default:
-            return compareByName(a, b) < 0;
-        }
-    });
+    std::stable_sort(beginIter, endIter,
+                     [this](const FileItem &lhs, const FileItem &rhs) {
+                         return itemLessThan(lhs, rhs);
+                     });
 }
 
 void FileListModel::sortItems()
