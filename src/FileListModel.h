@@ -17,6 +17,7 @@
 #include <QAbstractListModel>
 #include <QDateTime>
 #include <QFileInfo>
+#include <QFutureWatcher>
 #include <QFileSystemWatcher>
 #include <QTimer>
 #include <QSet>
@@ -27,6 +28,9 @@ struct FileItem {
     QString fullPath;
     bool isDir = false;
     bool isParent = false;
+    /// The name without its extension. Sorting compares this rather than the
+    /// whole file name - see compareByName in the .cpp.
+    QString baseName;
     bool isHidden = false;
     bool isExecutable = false;
     qint64 size = 0;
@@ -52,6 +56,10 @@ class FileListModel : public QAbstractListModel
     Q_PROPERTY(int sortColumn READ sortColumn WRITE setSortColumn NOTIFY sortChanged)
     Q_PROPERTY(bool sortAscending READ sortAscending WRITE setSortAscending NOTIFY sortChanged)
     Q_PROPERTY(bool showHidden READ showHidden WRITE setShowHidden NOTIFY showHiddenChanged)
+    /// True while the folder is being read on a worker thread. The rows are
+    /// empty during that window, so the panel can say so rather than looking
+    /// like an empty folder.
+    Q_PROPERTY(bool isLoading READ isLoading NOTIFY isLoadingChanged)
     Q_PROPERTY(QString filterPattern READ filterPattern WRITE setFilterPattern NOTIFY filterPatternChanged)
 
 public:
@@ -118,6 +126,7 @@ public:
     void setSortAscending(bool ascending);
 
     bool showHidden() const { return m_showHidden; }
+    bool isLoading() const { return m_isLoading; }
     Q_INVOKABLE void setShowHidden(bool show);
     Q_INVOKABLE void toggleShowHidden();
 
@@ -178,6 +187,7 @@ signals:
     void selectionChanged();
     void sortChanged();
     void showHiddenChanged();
+    void isLoadingChanged();
     void filterPatternChanged();
     void directoryLoadError(const QString &error);
     void beforeDirectoryReset(bool isNewPath);
@@ -187,13 +197,31 @@ private:
     void onDirectoryChanged(const QString &path);
     void loadDirectory();
     void sortItems();
+    /// The cheap half: applies the filter and the hidden-files switch to what
+    /// was already read. This is what runs on every keystroke.
+    void rebuildVisibleItems(bool isNewPath, bool announceBefore = true, bool announceAfter = true);
+    void setLoading(bool loading);
     void sortInternal();
     void updateSelectionStats();
+    /// Reads a folder into a plain list. Runs on a worker thread, so it takes
+    /// everything it needs as arguments and touches no member state; it is a
+    /// member only so it can reach the static formatters below.
+    static QList<FileItem> scanDirectory(const QString &path, const QSet<QString> &selectedPaths);
     static QString detectFileType(const QFileInfo &info);
     static QString formatSize(qint64 bytes, bool isDir);
     static QString formatPermissions(const QFileInfo &info);
 
     QString m_currentPath;
+    /// Everything the folder holds, read once. m_items is the subset of this
+    /// that is currently on screen. Splitting the two is what lets the filter
+    /// work without touching the disk.
+    QList<FileItem> m_allItems;
+    /// The read runs here. Pointing the watcher at a newer future drops the
+    /// older one's notification, so a superseded read finishes quietly and its
+    /// result is never applied.
+    QFutureWatcher<QList<FileItem>> *m_loadWatcher = nullptr;
+    bool m_pendingIsNewPath = false;
+    bool m_isLoading = false;
     QList<FileItem> m_items;
     QFileSystemWatcher m_watcher;
     // A directory being written to fires directoryChanged once per file. Each

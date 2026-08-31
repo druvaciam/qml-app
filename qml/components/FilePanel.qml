@@ -16,6 +16,12 @@ FocusScope {
     property alias fileListView: fileListView
     property alias filterInput: filterInput
     property bool isDragTarget: false
+    /// How long a folder read may take before the panel admits it is reading.
+    /// Most folders load in a frame or two and should say nothing at all.
+    property int loadingNoticeDelay: 50
+    /// Set by the delay timer once a read has gone on long enough to be worth
+    /// mentioning. Cleared when a new read starts.
+    property bool loadIsSlow: false
     signal requestDelete(bool permanent)
     signal requestCopy()
     signal requestMove()
@@ -284,6 +290,58 @@ FocusScope {
                 root.controller.activate()
                 fileListView.setFocus()
             }
+        }
+
+        // The folder is read on a worker thread, so on a real folder change the
+        // rows are empty for a moment. Without this an empty panel is
+        // indistinguishable from an empty folder. Shown only after a delay, and
+        // only while there is genuinely nothing to look at: a refresh keeps its
+        // rows, and covering those would be a flash for no reason.
+        Rectangle {
+            id: loadingOverlay
+            objectName: "loadingOverlay"
+            // Reparented onto the list rather than anchored to it. fileListView
+            // is a child of the ColumnLayout while this lives in the frame, so
+            // they are not parent-and-child nor siblings - and anchoring across
+            // that gap does not warn, it just silently leaves the item 0x0,
+            // which is why nothing appeared on screen.
+            parent: fileListView
+            anchors.fill: parent
+            // A binding, not something a signal handler switches on and off.
+            // Driving it from onIsLoadingChanged missed the one load that
+            // matters most - the first. The session's folder starts reading
+            // while AppController is being built, which is before this panel
+            // exists, so the change into "loading" had already happened before
+            // anything was listening and startup sat there in silence.
+            //
+            // count is 1 when only the ".." row is present, so this covers an
+            // empty list and never a refresh, which keeps its rows.
+            visible: root.loadIsSlow
+                     && root.controller.model.isLoading
+                     && root.controller.model.count <= 1
+            color: Theme.bgPanel
+            opacity: 0.85
+            z: 50
+
+            Text {
+                anchors.centerIn: parent
+                text: "Reading folder\u2026"
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontSizeSmall
+                color: Theme.textSecondary
+            }
+        }
+
+        Timer {
+            id: loadingDelay
+            interval: root.loadingNoticeDelay
+            repeat: false
+            // Follows the model rather than being started by a handler, so it
+            // arms itself even when the read was already under way before this
+            // panel was created.
+            running: root.controller.model.isLoading
+            onRunningChanged: if (running) root.loadIsSlow = false
+            onTriggered: root.loadIsSlow = true
         }
     }
 

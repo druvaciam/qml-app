@@ -201,4 +201,6 @@ private:
     DriveInfo m_currentDriveInfo;
     bool m_isActive = false;
     QString m_filterText;
+    /// Set before navigating, applied once that folder has finished loading.
+    QString m_pendingSelectName;
 };

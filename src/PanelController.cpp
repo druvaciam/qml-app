@@ -29,6 +29,18 @@ PanelController::PanelController(QObject *parent)
     });
     connect(m_model, &FileListModel::selectionChanged, this, &PanelController::statusChanged);
 
+    // The folder is read on a worker thread now, so anything that wants to put
+    // the cursor on a particular row has to wait for it to arrive rather than
+    // asking an empty model.
+    connect(m_model, &FileListModel::directoryReset, this, [this](bool) {
+        if (m_pendingSelectName.isEmpty()) {
+            return;
+        }
+        const QString wanted = m_pendingSelectName;
+        m_pendingSelectName.clear();
+        selectItemByName(wanted);
+    });
+
     refreshDrives();
 }
 
@@ -118,16 +130,13 @@ void PanelController::navigateUp()
     if (!dir.isRoot()) {
         QString oldDirName = dir.dirName();
         QString parent = QDir::cleanPath(dir.filePath(QStringLiteral("..")));
+        // Asked for before navigating, applied when the parent has finished
+        // loading. Asking the model directly here would query rows that have
+        // not been read yet.
+        m_pendingSelectName = oldDirName;
         navigateTo(parent);
         setIsActive(true);
-        if (m_model) {
-            int idx = m_model->findItemIndex(oldDirName);
-            if (idx >= 0) {
-                setCurrentIndex(idx);
-            } else {
-                setCurrentIndex(0);
-            }
-        }
+        setCurrentIndex(0);
     }
 }
 
