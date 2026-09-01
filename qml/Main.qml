@@ -818,6 +818,8 @@ ApplicationWindow {
             }
         }
 
+        Keys.onTabPressed: (event) => { event.accepted = true }
+        Keys.onBacktabPressed: (event) => { event.accepted = true }
         Keys.onEscapePressed: (event) => { messageDialog.close(); event.accepted = true }
         Keys.onReturnPressed: (event) => { messageDialog.close(); event.accepted = true }
         Keys.onEnterPressed: (event) => { messageDialog.close(); event.accepted = true }

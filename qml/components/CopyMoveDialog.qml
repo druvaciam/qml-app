@@ -18,7 +18,29 @@ FocusScope {
     visible: isOpen
     anchors.fill: parent
     z: 150
+    objectName: "copyMoveDialog"
     focus: true
+
+    /// What Tab cycles through. Qt's own focus chain walks the entire scene,
+    /// and the panels behind a dialog are still visible items - so Tab used to
+    /// step straight out of the dialog and into the file list, which is not
+    /// what "modal" means to anyone.
+    readonly property var focusRing: [targetInput, okButton, cancelButton]
+
+    function stepFocus(delta) {
+        let at = -1
+        for (let i = 0; i < root.focusRing.length; ++i) {
+            if (root.focusRing[i].activeFocus) {
+                at = i
+                break
+            }
+        }
+        // Nothing in the ring has it yet - the dialog itself does - so Tab
+        // starts at the beginning and Shift+Tab at the end.
+        const next = (at < 0) ? (delta > 0 ? 0 : root.focusRing.length - 1)
+                              : (at + delta + root.focusRing.length) % root.focusRing.length
+        root.focusRing[next].forceActiveFocus()
+    }
 
     function open(items, targetDir, move = false) {
         itemsList = items || []
@@ -27,9 +49,11 @@ FocusScope {
         targetInput.text = targetDir || ""
         isOpen = true
         root.focus = true
+        // Focus stays on the dialog itself rather than the path field. The
+        // path is nearly always right as offered, so the useful default is
+        // "press Enter to copy" - not "the whole path is selected and one
+        // keystroke replaces it". Click the field to edit it.
         root.forceActiveFocus()
-        targetInput.forceActiveFocus()
-        targetInput.selectAll()
     }
 
     function close() {
@@ -109,12 +133,12 @@ FocusScope {
             // Target directory text field
             TextField {
                 id: targetInput
+                objectName: "targetInput"
                 Layout.fillWidth: true
                 height: 34
                 font.family: Theme.fontMono
                 font.pixelSize: Theme.fontSizeSmall
                 color: Theme.textPrimary
-                focus: true
                 selectByMouse: true
                 background: Rectangle {
                     color: Theme.bgInput
@@ -123,6 +147,11 @@ FocusScope {
                     radius: Theme.radiusSmall
                 }
                 onAccepted: root.confirm()
+                // Handled here as well as on the dialog: a TextField sees the
+                // key first, and Qt's default handling would move focus out of
+                // the dialog before the event ever reached the root.
+                Keys.onTabPressed: (event) => { root.stepFocus(1); event.accepted = true; }
+                Keys.onBacktabPressed: (event) => { root.stepFocus(-1); event.accepted = true; }
                 Keys.onReturnPressed: (event) => { root.confirm(); event.accepted = true; }
                 Keys.onEnterPressed: (event) => { root.confirm(); event.accepted = true; }
                 Keys.onEscapePressed: (event) => { root.close(); event.accepted = true; }
@@ -166,12 +195,20 @@ FocusScope {
                 // Cancel Button
                 Rectangle {
                     id: cancelButton
+                    objectName: "cancelButton"
+                    activeFocusOnTab: true
+
+                    // Qt's own Tab handling runs on the focused item before the
+                    // event ever reaches the dialog root, so every item in the
+                    // ring has to claim Tab for itself or focus walks out.
+                    Keys.onTabPressed: (event) => { root.stepFocus(1); event.accepted = true; }
+                    Keys.onBacktabPressed: (event) => { root.stepFocus(-1); event.accepted = true; }
                     width: 95
                     height: 32
                     radius: Theme.radiusSmall
                     color: cancelMouse.containsMouse ? Theme.bgHover : Theme.bgHeader
-                    border.color: Theme.borderSubtle
-                    border.width: 1
+                    border.color: cancelButton.activeFocus ? Theme.textPrimary : Theme.borderSubtle
+                    border.width: cancelButton.activeFocus ? 2 : 1
 
                     Text {
                         anchors.centerIn: parent
@@ -193,10 +230,23 @@ FocusScope {
                 // OK Button
                 Rectangle {
                     id: okButton
+                    objectName: "okButton"
+                    activeFocusOnTab: true
+
+                    // Qt's own Tab handling runs on the focused item before the
+                    // event ever reaches the dialog root, so every item in the
+                    // ring has to claim Tab for itself or focus walks out.
+                    Keys.onTabPressed: (event) => { root.stepFocus(1); event.accepted = true; }
+                    Keys.onBacktabPressed: (event) => { root.stepFocus(-1); event.accepted = true; }
                     width: 125
                     height: 32
                     radius: Theme.radiusSmall
                     color: okMouse.containsMouse ? Theme.accentHover : Theme.accent
+                    // Says which button Enter will press: the dialog's default
+                    // action, or whichever button Tab has landed on.
+                    border.color: Theme.textPrimary
+                    border.width: (okButton.activeFocus
+                                   || (!targetInput.activeFocus && !cancelButton.activeFocus)) ? 2 : 0
 
                     Text {
                         anchors.centerIn: parent
@@ -220,6 +270,30 @@ FocusScope {
     }
 
     Keys.onEscapePressed: (event) => { root.close(); event.accepted = true; }
-    Keys.onReturnPressed: (event) => { root.confirm(); event.accepted = true; }
-    Keys.onEnterPressed: (event) => { root.confirm(); event.accepted = true; }
+    Keys.onReturnPressed: (event) => { root.activateFocused(); event.accepted = true; }
+    Keys.onEnterPressed: (event) => { root.activateFocused(); event.accepted = true; }
+    Keys.onTabPressed: (event) => { root.stepFocus(1); event.accepted = true; }
+    Keys.onBacktabPressed: (event) => { root.stepFocus(-1); event.accepted = true; }
+
+    /// Enter presses whichever button has focus, and Copy when none does.
+    /// Space does the same, which is what a focused button is expected to do.
+    function activateFocused() {
+        if (cancelButton.activeFocus) {
+            root.close()
+        } else {
+            root.confirm()
+        }
+    }
+
+    Keys.onSpacePressed: (event) => {
+        if (okButton.activeFocus || cancelButton.activeFocus) {
+            root.activateFocused()
+            event.accepted = true
+        }
+    }
+
+    // Nothing behind a modal should be reachable by keyboard. Anything not
+    // handled above is swallowed here rather than allowed to travel on to the
+    // panels underneath.
+    Keys.onPressed: (event) => { event.accepted = true; }
 }

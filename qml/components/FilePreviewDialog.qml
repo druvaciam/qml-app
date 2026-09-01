@@ -5,6 +5,7 @@ import QmlCommander
 
 Rectangle {
     id: root
+    objectName: "previewDialog"
     required property FilePreviewService previewService
 
     property string filePath: ""
@@ -38,15 +39,54 @@ Rectangle {
         root.forceActiveFocus()
         root.focus = true
 
-        // In edit mode, put the caret in the text so typing works straight away.
-        // Deferred so the editor exists and is laid out first. Escape still
-        // closes the dialog: TextArea ignores it, so it propagates up to
-        // Keys.onEscapePressed on the root.
-        if (editMode && !root.fileData?.isTruncated && root.fileData?.isText) {
+        // The caret goes into the text for viewing as well as editing. In view
+        // mode the editor is read-only, so nothing can be typed - but Page Up,
+        // Page Down and the arrows all need something focused to act on, and
+        // with focus left on the dialog root they did nothing at all.
+        if (root.fileData?.isText) {
             Qt.callLater(() => {
                 editorText.forceActiveFocus()
                 editorText.cursorPosition = 0
             })
+        }
+    }
+
+    /// What Tab cycles through. Only the items that are actually on screen:
+    /// Save is hidden when the file is being viewed rather than edited, and
+    /// tabbing onto an invisible button would look like Tab had stopped
+    /// working.
+    function focusRing() {
+        let ring = []
+        if (editorText.visible) ring.push(editorText)
+        if (saveButton.visible) ring.push(saveButton)
+        if (closeButton.visible) ring.push(closeButton)
+        return ring
+    }
+
+    function stepFocus(delta) {
+        const ring = root.focusRing()
+        if (ring.length === 0) {
+            return
+        }
+        let at = -1
+        for (let i = 0; i < ring.length; ++i) {
+            if (ring[i].activeFocus) {
+                at = i
+                break
+            }
+        }
+        const next = (at < 0) ? (delta > 0 ? 0 : ring.length - 1)
+                              : (at + delta + ring.length) % ring.length
+        ring[next].forceActiveFocus()
+    }
+
+    /// Enter and Space press whichever button has focus. In the editor they do
+    /// what they always did - a newline and a space.
+    function activateFocused() {
+        if (saveButton.activeFocus) {
+            root.save(true)
+        } else if (closeButton.activeFocus) {
+            root.close()
         }
     }
 
@@ -253,12 +293,29 @@ Rectangle {
 
                 // 1. Text Viewer / Editor
                 ScrollView {
+                    id: editorScroll
                     anchors.fill: parent
                     visible: !!(root.fileData && root.fileData.isText)
                     clip: true
 
+                    // Configures the bar ScrollView already owns rather than
+                    // assigning a replacement: a replacement is not the one the
+                    // control lays out, so it ended up 12 pixels wide and 4
+                    // high while the real bar stayed hidden.
+                    //
+                    // Always on, so a file that continues past the bottom of the
+                    // window says so instead of looking like it ends there.
+                    ScrollBar.vertical.policy: ScrollBar.AlwaysOn
+                    ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                    ScrollBar.vertical.contentItem: Rectangle {
+                        implicitWidth: 8
+                        radius: 4
+                        color: Theme.borderSubtle
+                    }
+
                     TextArea {
                         id: editorText
+                        objectName: "editorText"
                         readOnly: !root.isEditMode || Boolean(root.fileData?.isTruncated)
                         selectByMouse: true
                         font.family: Theme.fontMono
@@ -272,6 +329,33 @@ Rectangle {
                         }
                         wrapMode: TextArea.WrapAnywhere
 
+                        /// Moves the caret a screenful at a time. A TextArea
+                        /// does not implement Page Up or Page Down itself, and
+                        /// the ScrollView around it only reacts to the caret
+                        /// moving - so without this the keys did nothing at all
+                        /// in a file too long to fit.
+                        function pageBy(direction) {
+                            const lineHeight = Math.max(1, editorText.cursorRectangle.height)
+                            const visibleLines = Math.max(1, Math.floor(editorScroll.availableHeight / lineHeight) - 1)
+                            const target = Qt.point(editorText.cursorRectangle.x,
+                                                    editorText.cursorRectangle.y
+                                                    + direction * visibleLines * lineHeight)
+                            const at = editorText.positionAt(target.x, target.y)
+                            editorText.cursorPosition =
+                                (at >= 0) ? at
+                                          : (direction > 0 ? editorText.length : 0)
+                        }
+
+                        Keys.onPressed: (event) => {
+                            if (event.key === Qt.Key_PageDown) {
+                                editorText.pageBy(1)
+                                event.accepted = true
+                            } else if (event.key === Qt.Key_PageUp) {
+                                editorText.pageBy(-1)
+                                event.accepted = true
+                            }
+                        }
+
                         // Escape is handled here rather than relying on the key
                         // bubbling out through ScrollView to the root. Ctrl+S
                         // ends by focusing this editor, and once focus was in
@@ -280,6 +364,12 @@ Rectangle {
                             root.close()
                             event.accepted = true
                         }
+
+                        // The editor sees Tab before the dialog does, and Qt's
+                        // own handling would move focus out of the modal and
+                        // into the file panels behind it.
+                        Keys.onTabPressed: (event) => { root.stepFocus(1); event.accepted = true; }
+                        Keys.onBacktabPressed: (event) => { root.stepFocus(-1); event.accepted = true; }
                     }
                 }
 
@@ -418,12 +508,25 @@ Rectangle {
 
                 // Save button if edit mode
                 Rectangle {
+                    id: saveButton
+                    objectName: "saveButton"
                     Layout.preferredWidth: 100
                     Layout.preferredHeight: 30
                     Layout.alignment: Qt.AlignVCenter
                     radius: Theme.radiusSmall
                     visible: Boolean(root.isEditMode && root.fileData?.isText && !root.fileData?.isTruncated)
                     color: saveMouse.containsMouse ? Theme.accentHover : Theme.accent
+                    border.color: Theme.textPrimary
+                    border.width: saveButton.activeFocus ? 2 : 0
+
+                    // Qt's Tab handling runs on the focused item before the
+                    // event reaches the dialog, so every item in the ring has
+                    // to claim Tab itself or focus walks out of the modal.
+                    Keys.onTabPressed: (event) => { root.stepFocus(1); event.accepted = true; }
+                    Keys.onBacktabPressed: (event) => { root.stepFocus(-1); event.accepted = true; }
+                    Keys.onSpacePressed: (event) => { root.activateFocused(); event.accepted = true; }
+                    Keys.onReturnPressed: (event) => { root.activateFocused(); event.accepted = true; }
+                    Keys.onEnterPressed: (event) => { root.activateFocused(); event.accepted = true; }
 
                     Text {
                         anchors.centerIn: parent
@@ -445,13 +548,24 @@ Rectangle {
 
                 // Close button
                 Rectangle {
+                    id: closeButton
+                    objectName: "closeButton"
                     Layout.preferredWidth: 80
                     Layout.preferredHeight: 30
                     Layout.alignment: Qt.AlignVCenter
                     radius: Theme.radiusSmall
                     color: dlgCloseMouse.containsMouse ? Theme.bgHover : Theme.bgHeader
-                    border.color: Theme.borderSubtle
-                    border.width: 1
+                    border.color: closeButton.activeFocus ? Theme.textPrimary : Theme.borderSubtle
+                    border.width: closeButton.activeFocus ? 2 : 1
+
+                    // Qt's Tab handling runs on the focused item before the
+                    // event reaches the dialog, so every item in the ring has
+                    // to claim Tab itself or focus walks out of the modal.
+                    Keys.onTabPressed: (event) => { root.stepFocus(1); event.accepted = true; }
+                    Keys.onBacktabPressed: (event) => { root.stepFocus(-1); event.accepted = true; }
+                    Keys.onSpacePressed: (event) => { root.activateFocused(); event.accepted = true; }
+                    Keys.onReturnPressed: (event) => { root.activateFocused(); event.accepted = true; }
+                    Keys.onEnterPressed: (event) => { root.activateFocused(); event.accepted = true; }
 
                     Text {
                         anchors.centerIn: parent
@@ -477,9 +591,24 @@ Rectangle {
     // list behind this dialog. The TextArea handles Enter itself in edit mode,
     // so newlines still work there.
     Keys.onPressed: (event) => {
+        // Tab has to be handled here, not in Keys.onTabPressed: onPressed runs
+        // first and the blanket accept below would swallow the key before the
+        // specific handler ever saw it. In view mode the root holds focus, so
+        // this is the only place Tab arrives at all.
+        if (event.key === Qt.Key_Tab) {
+            root.stepFocus(1)
+            event.accepted = true
+            return
+        }
+        if (event.key === Qt.Key_Backtab) {
+            root.stepFocus(-1)
+            event.accepted = true
+            return
+        }
         if (event.key === Qt.Key_Escape) {
             root.close()
         }
+        // Nothing else travels on to the panels behind a modal.
         event.accepted = true
     }
 }

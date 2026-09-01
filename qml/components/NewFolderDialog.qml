@@ -5,6 +5,12 @@ import QmlCommander
 
 Rectangle {
     id: root
+    // Tab is contained. Qt's focus chain walks the whole scene, and the panels
+    // behind a dialog are still visible items, so without this Tab steps out of
+    // the modal and into the file list - which is not what modal means.
+    Keys.onTabPressed: (event) => { event.accepted = true; }
+    Keys.onBacktabPressed: (event) => { event.accepted = true; }
+
 
     signal accepted(string folderName)
     signal rejected()
@@ -76,6 +82,11 @@ Rectangle {
 
                 TextField {
                     id: folderNameInput
+
+                    // The field sees Tab before the dialog does, and Qt would
+                    // use it to move focus out of the modal.
+                    Keys.onTabPressed: (event) => { event.accepted = true; }
+                    Keys.onBacktabPressed: (event) => { event.accepted = true; }
                     anchors.fill: parent
                     anchors.margins: 1
                     font.family: Theme.fontFamily

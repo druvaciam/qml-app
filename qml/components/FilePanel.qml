@@ -61,6 +61,12 @@ FocusScope {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 controller: root.controller
+                // Completes the focus chain. Both this and FilePanel are focus
+                // scopes, so active focus only reaches the list if every scope
+                // between the window and it claims focus. Without this the
+                // chain stopped at the panel and the arrow keys did nothing
+                // until something else - Tab, or a click - moved focus by hand.
+                focus: true
                 onRequestDelete: (permanent) => root.requestDelete(permanent)
                 onRequestCopy: root.requestCopy()
                 onRequestMove: root.requestMove()

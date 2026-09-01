@@ -7,6 +7,12 @@ import QmlCommander
 // destination. Only reached on platforms without a native shell prompt.
 FocusScope {
     id: root
+    // Tab is contained. Qt's focus chain walks the whole scene, and the panels
+    // behind a dialog are still visible items, so without this Tab steps out of
+    // the modal and into the file list - which is not what modal means.
+    Keys.onTabPressed: (event) => { event.accepted = true; }
+    Keys.onBacktabPressed: (event) => { event.accepted = true; }
+
 
     signal resolved(int policy, var sourcePaths, string destination, bool isMove)
     signal closed()
