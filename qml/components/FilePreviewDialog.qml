@@ -591,10 +591,13 @@ Rectangle {
     // list behind this dialog. The TextArea handles Enter itself in edit mode,
     // so newlines still work there.
     Keys.onPressed: (event) => {
-        // Tab has to be handled here, not in Keys.onTabPressed: onPressed runs
-        // first and the blanket accept below would swallow the key before the
-        // specific handler ever saw it. In view mode the root holds focus, so
-        // this is the only place Tab arrives at all.
+        // Tab is handled here rather than in a Keys.onTabPressed because this
+        // item has a blanket accept at the end. Specific handlers do run first
+        // - Keys.onPressed only sees what they leave - but there was no Tab
+        // handler on this item at all, so Tab fell through to the accept below
+        // and vanished. In view mode the root holds focus, so that was the only
+        // place Tab ever arrived. Either shape works; this keeps the routing in
+        // one place, next to the accept that would otherwise hide it.
         if (event.key === Qt.Key_Tab) {
             root.stepFocus(1)
             event.accepted = true

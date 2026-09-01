@@ -233,17 +233,6 @@ static QString pathKey(const QString &path)
 #endif
 }
 
-int FileListModel::indexOfPath(const QList<FileItem> &list, const QString &path) const
-{
-    const QString wanted = pathKey(path);
-    for (int i = 0; i < static_cast<int>(list.size()); ++i) {
-        if (pathKey(list.at(i).fullPath) == wanted) {
-            return i;
-        }
-    }
-    return -1;
-}
-
 bool FileListModel::passesView(const FileItem &item,
                                const QList<QRegularExpression> &patterns) const
 {

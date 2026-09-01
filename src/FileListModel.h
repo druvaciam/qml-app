@@ -236,7 +236,6 @@ private:
     bool itemLessThan(const FileItem &lhs, const FileItem &rhs) const;
     /// Whether a row survives the current filter and hidden-files switch.
     bool passesView(const FileItem &item, const QList<QRegularExpression> &patterns) const;
-    int indexOfPath(const QList<FileItem> &list, const QString &path) const;
     bool belongsToCurrentFolder(const QString &path) const;
     void insertVisibleSorted(const FileItem &item);
     void removeVisibleAt(int row);
