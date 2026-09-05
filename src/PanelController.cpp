@@ -5,6 +5,7 @@
 #include <QStorageInfo>
 #include <QSet>
 #include <QTimer>
+#include "Logging.h"
 
 PanelController::PanelController(QObject *parent)
     : QObject(parent),
@@ -110,6 +111,7 @@ void PanelController::navigateTo(const QString &path)
         // "does not exist" would be a lie about it.
         const QFileInfo info(cleanPath);
         if (info.exists()) {
+            qCWarning(lcNav).noquote() << "refused" << cleanPath << "- it is a file";
             emit navigationError(QStringLiteral("'%1' is a file, not a folder.").arg(cleanPath));
         } else {
             emit navigationError(QStringLiteral("Cannot open '%1'. The folder does not exist, or is not "
@@ -120,6 +122,7 @@ void PanelController::navigateTo(const QString &path)
     }
 
     if (!FileOperationsService::isSamePath(m_model->currentPath(), cleanPath)) {
+        qCDebug(lcNav).noquote() << "navigate" << m_model->currentPath() << "->" << cleanPath;
         pushHistory(cleanPath);
         clearFilterOnNavigate();
         m_model->setCurrentPath(cleanPath);
@@ -138,6 +141,7 @@ void PanelController::navigateUp()
         // Asked for before navigating, applied when the parent has finished
         // loading. Asking the model directly here would query rows that have
         // not been read yet.
+        qCDebug(lcNav).noquote() << "up out of" << oldDirName << "- cursor will follow it";
         m_pendingSelectName = oldDirName;
         navigateTo(parent);
         setIsActive(true);

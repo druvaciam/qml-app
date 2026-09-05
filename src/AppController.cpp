@@ -1,5 +1,6 @@
 #include "AppController.h"
 #include <QDir>
+#include "Logging.h"
 #include <QSettings>
 #include <QGuiApplication>
 #include <QScreen>
@@ -547,6 +548,9 @@ void AppController::onFileOperationCompleted(bool success, const QString &messag
     // the final names and reports them back through the progress sink.
     const QStringList removed = m_fileOps->lastRemovedPaths();
     const QStringList created = m_fileOps->lastCreatedPaths();
+    qCDebug(lcOps).noquote() << "operation finished:" << (success ? "ok" : "failed")
+                             << "- removed" << removed.size() << "created" << created.size()
+                             << (m_fileOps->lastChangeIsKnown() ? "(known)" : "(not described)");
     if (success && m_fileOps->lastChangeIsKnown() && (!removed.isEmpty() || !created.isEmpty())) {
         for (PanelController *panel : {m_leftPanel, m_rightPanel}) {
             if (!panel || !panel->model()) {

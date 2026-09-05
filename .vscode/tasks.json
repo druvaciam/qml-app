@@ -7,7 +7,7 @@
             "command": "ninja",
             "args": [
                 "-C",
-                "build"
+                "build-debug"
             ],
             "options": {
                 "cwd": "${workspaceFolder}",
@@ -25,9 +25,9 @@
         {
             "label": "Run",
             "type": "shell",
-            "command": "${workspaceFolder}/build/appQmlCommander.exe",
+            "command": "${workspaceFolder}/build-debug/appQmlCommander.exe",
             "options": {
-                "cwd": "${workspaceFolder}/build",
+                "cwd": "${workspaceFolder}/build-debug",
                 "env": {
                     "PATH": "D:\\Qt\\6.8.2\\mingw_64\\bin;D:\\Qt\\Tools\\mingw1310_64\\bin;D:\\Qt\\Tools\\Ninja;${env:PATH}",
                     "QTFRAMEWORK_BYPASS_LICENSE_CHECK": "1"

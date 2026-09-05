@@ -3,6 +3,8 @@
 #include <QFileInfo>
 #include <QRegularExpression>
 #include <QtConcurrent>
+#include <QElapsedTimer>
+#include "Logging.h"
 #include <algorithm>
 
 FileListModel::FileListModel(QObject *parent)
@@ -326,6 +328,8 @@ void FileListModel::applyKnownRemovals(const QStringList &paths)
     if (removedCount == 0) {
         return;
     }
+    qCDebug(lcModel).noquote() << "applying" << removedCount << "known removals in" << m_currentPath
+                               << (removedCount > kSurgicalLimit ? "(rebuild)" : "(row by row)");
 
     if (removedCount > kSurgicalLimit) {
         // One reset beats hundreds of individual row removals, and still costs
@@ -365,6 +369,9 @@ void FileListModel::applyKnownChanges(const QStringList &paths)
     if (mine.isEmpty()) {
         return;
     }
+
+    qCDebug(lcModel).noquote() << "applying" << mine.size() << "known changes in" << m_currentPath
+                               << (mine.size() > kSurgicalLimit ? "(rebuild)" : "(row by row)");
 
     // Index the full listing once. Looking each path up by scanning was what
     // made pasting 1644 files into a folder of 28486 appear to hang: 47 million
@@ -866,6 +873,8 @@ void FileListModel::storeInCache(const QString &path, const QList<FileItem> &ite
     // One 200000-file folder emptied the cache of all eight others and gained
     // nothing. It is skipped instead, and any stale copy of it is dropped.
     if (items.size() > kCacheRowBudget) {
+        qCDebug(lcCache).noquote() << "not caching" << path << "-" << items.size()
+                                   << "rows exceeds the whole budget of" << kCacheRowBudget;
         m_listingCache.remove(path);
         m_cacheOrder.removeAll(path);
         return;
@@ -890,6 +899,7 @@ void FileListModel::storeInCache(const QString &path, const QList<FileItem> &ite
     while (m_cacheOrder.size() > 1
            && (m_cacheOrder.size() > kCacheFolders || rows > kCacheRowBudget)) {
         const QString oldest = m_cacheOrder.takeFirst();
+        qCDebug(lcCache).noquote() << "evicting" << oldest << "- over budget";
         const auto found = m_listingCache.constFind(oldest);
         if (found != m_listingCache.constEnd()) {
             rows -= found.value().size();
@@ -975,8 +985,11 @@ void FileListModel::loadDirectory()
             }
             touchCache(m_currentPath);
             m_servedFromCache = true;
+            qCDebug(lcCache).noquote() << "hit" << m_currentPath << "->" << m_allItems.size()
+                                       << "rows shown at once, rescan follows";
             rebuildVisibleItems(isNewPath, false, true);
         } else {
+            qCDebug(lcCache).noquote() << "miss" << m_currentPath << "- reading from disk";
             m_allItems.clear();
             rebuildVisibleItems(isNewPath, false, false);
         }
@@ -1000,10 +1013,15 @@ void FileListModel::loadDirectory()
             const bool rowsAlreadyShowing = m_servedFromCache || !m_pendingIsNewPath;
             if (rowsAlreadyShowing) {
                 if (listingsMatch(m_allItems, fresh)) {
+                    qCDebug(lcModel).noquote() << "rescan of" << m_currentPath
+                                               << "found no change, list left alone";
                     m_servedFromCache = false;
                     setLoading(false);
                     return;
                 }
+                qCDebug(lcModel).noquote() << "rescan of" << m_currentPath << "differs:"
+                                           << m_allItems.size() << "->" << fresh.size()
+                                           << "rows, rebuilding";
                 // Something changed while we were away. Announce a fresh pair so
                 // the view saves where the user is now, not where they were when
                 // the load started.
@@ -1112,6 +1130,9 @@ QList<FileItem> FileListModel::scanDirectory(const QString &path, const QSet<QSt
         dir.entryInfoList(QDir::AllEntries | QDir::NoDotAndDotDot | QDir::Hidden | QDir::System,
                           QDir::NoSort);
 
+    QElapsedTimer readTimer;
+    readTimer.start();
+
     out.reserve(entries.size());
     for (const QFileInfo &info : entries) {
         // A copy in progress writes one of these per file. They are the app's,
@@ -1122,6 +1143,9 @@ QList<FileItem> FileListModel::scanDirectory(const QString &path, const QSet<QSt
 
         out.append(makeItem(info, selectedPaths.contains(info.absoluteFilePath())));
     }
+
+    qCDebug(lcModel).noquote() << "read" << path << "->" << out.size() << "entries in"
+                               << readTimer.elapsed() << "ms (worker thread)";
     return out;
 }
 

@@ -5,10 +5,10 @@
             "name": "Build & Run (QmlCommander)",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/appQmlCommander.exe",
+            "program": "${workspaceFolder}/build-debug/appQmlCommander.exe",
             "args": [],
             "stopAtEntry": false,
-            "cwd": "${workspaceFolder}/build",
+            "cwd": "${workspaceFolder}/build-debug",
             "environment": [
                 {
                     "name": "PATH",

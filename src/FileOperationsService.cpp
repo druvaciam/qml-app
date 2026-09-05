@@ -1,4 +1,5 @@
 #include "FileOperationsService.h"
+#include "Logging.h"
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
@@ -329,6 +330,7 @@ FileOperationsService::~FileOperationsService()
 void FileOperationsService::beginDelta()
 {
     QMutexLocker lock(&m_deltaMutex);
+    qCDebug(lcOps) << "recording what this operation touches";
     m_lastRemovedPaths.clear();
     m_lastCreatedPaths.clear();
     m_lastChangeIsKnown = true;
@@ -349,6 +351,7 @@ void FileOperationsService::noteCreated(const QString &path)
 void FileOperationsService::abandonDelta()
 {
     QMutexLocker lock(&m_deltaMutex);
+    qCDebug(lcOps) << "cannot describe what changed - the panels will do a full refresh";
     m_lastChangeIsKnown = false;
 }
 

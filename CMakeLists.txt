@@ -43,6 +43,8 @@ qt_add_qml_module(appQmlCommander
     RESOURCE_PREFIX "/"
     SOURCES
         src/Theme.h
+        src/Logging.h
+        src/Logging.cpp
         src/DriveInfo.h
         src/DriveInfo.cpp
         src/FileListModel.h
