@@ -18,6 +18,17 @@ find_package(Qt6 6.5 REQUIRED COMPONENTS
     Concurrent
 )
 
+# Optional on purpose: a Qt install may not include Multimedia, and the rest of
+# the application must keep building without it.
+find_package(Qt6 6.5 QUIET COMPONENTS Multimedia)
+if(TARGET Qt6::Multimedia)
+    message(STATUS "Qt Multimedia found - audio and video preview enabled")
+    set(QMLCOMMANDER_MEDIA_QML qml/components/MediaPlayerPanel.qml)
+else()
+    message(STATUS "Qt Multimedia NOT found - audio and video preview disabled")
+    set(QMLCOMMANDER_MEDIA_QML "")
+endif()
+
 # Suppress QTP0004 policy warning for QML subdirectories
 if(COMMAND qt_policy)
     qt_policy(SET QTP0004 NEW)
@@ -70,6 +81,7 @@ qt_add_qml_module(appQmlCommander
         qml/components/ConfirmDeleteDialog.qml
         qml/components/ConflictDialog.qml
         qml/components/CopyMoveDialog.qml
+        ${QMLCOMMANDER_MEDIA_QML}
     RESOURCES
         resources/app_icon.png
         resources/app_icon_32.png
@@ -83,6 +95,11 @@ target_link_libraries(appQmlCommander PRIVATE
     Qt6::QuickControls2
     Qt6::Concurrent
 )
+
+if(TARGET Qt6::Multimedia)
+    target_link_libraries(appQmlCommander PRIVATE Qt6::Multimedia)
+    target_compile_definitions(appQmlCommander PRIVATE QMLCOMMANDER_HAS_MULTIMEDIA)
+endif()
 
 if(WIN32)
     add_compile_definitions(NOMINMAX)

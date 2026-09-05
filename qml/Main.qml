@@ -33,6 +33,18 @@ ApplicationWindow {
     Component.onCompleted: {
         appCtrl.restoreWindowGeometry(window)
         appCtrl.setupTrayIcon(window)
+
+        // The session remembers which pane was in use, and the left panel is
+        // the one that declares focus: true. Restoring a session that ended on
+        // the right therefore highlighted the right pane while the keyboard was
+        // still on the left, so the arrow keys moved the cursor the user was
+        // not looking at. Put the keyboard where the highlight is.
+        //
+        // Deferred rather than called here: at this point the panels have been
+        // created but the window has not finished settling, and forcing focus
+        // this early left it on neither panel, with the arrows and Tab both
+        // dead. Qt.callLater runs it once the current pass is over.
+        Qt.callLater(restoreActiveFocus)
     }
 
     onClosing: {
@@ -44,8 +56,15 @@ ApplicationWindow {
     AppController {
         id: appCtrl
 
-        onRequestPreviewFile: (filePath) => {
-            previewDialog.open(filePath, false)
+        // Enter, or a double click. openInDefaultApp returns false when the
+        // system has nothing registered for the file type, and saying so beats
+        // a key press that appears to do nothing at all.
+        onRequestOpenInDefaultApp: (filePath) => {
+            if (!appCtrl.preview.openInDefaultApp(filePath)) {
+                messageDialog.title = "Cannot open"
+                messageDialog.messageText = "No application is associated with this file."
+                messageDialog.open()
+            }
         }
 
         // showMessageRequested is handled by the Connections block further down.
@@ -512,6 +531,7 @@ ApplicationWindow {
             // Left File Panel
             FilePanel {
                 id: leftPanel
+                objectName: "leftPanel"
                 // Each panel is its own FocusScope, so one of them has to hold
                 // the window's focus to begin with. Without this the first
                 // forceActiveFocus() from anywhere decides it.
@@ -529,6 +549,7 @@ ApplicationWindow {
             // Right File Panel
             FilePanel {
                 id: rightPanel
+                objectName: "rightPanel"
                 SplitView.fillWidth: true
                 SplitView.preferredWidth: parent.width / 2
                 SplitView.minimumWidth: 320

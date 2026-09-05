@@ -24,6 +24,15 @@ FilePreviewService::FilePreviewService(QObject *parent)
 {
 }
 
+bool FilePreviewService::mediaSupported()
+{
+#ifdef QMLCOMMANDER_HAS_MULTIMEDIA
+    return true;
+#else
+    return false;
+#endif
+}
+
 QVariantMap FilePreviewService::loadPreview(const QString &filePath, int maxBytes)
 {
     QVariantMap result;
@@ -51,7 +60,29 @@ QVariantMap FilePreviewService::loadPreview(const QString &filePath, int maxByte
                    ext == "png" || ext == "jpg" || ext == "jpeg" || ext == "gif" ||
                    ext == "bmp" || ext == "svg" || ext == "webp" || ext == "ico";
 
+    // Recognised by MIME type first, with an extension list as the fallback -
+    // a MIME database can be incomplete, and a file with no extension can still
+    // be identified by its contents.
+    const bool isAudio = mime.name().startsWith(QStringLiteral("audio/")) ||
+                         ext == "mp3" || ext == "wav" || ext == "flac" || ext == "ogg" ||
+                         ext == "m4a" || ext == "aac" || ext == "wma" || ext == "opus";
+    const bool isVideo = mime.name().startsWith(QStringLiteral("video/")) ||
+                         ext == "mp4" || ext == "mkv" || ext == "avi" || ext == "mov" ||
+                         ext == "webm" || ext == "wmv" || ext == "m4v" || ext == "mpg" ||
+                         ext == "mpeg";
+
     result["isImage"] = isImage;
+    result["isAudio"] = isAudio && !isImage;
+    result["isVideo"] = isVideo && !isImage;
+
+    if (isAudio || isVideo) {
+        // Nothing is read here. The player is handed the path and streams it
+        // itself, which is the only sane way to open a two hour video.
+        result["isText"] = false;
+        result["content"] = QString();
+        result["fileUrl"] = QUrl::fromLocalFile(filePath).toString();
+        return result;
+    }
 
     if (isImage) {
         QImageReader reader(filePath);

@@ -249,7 +249,7 @@ void PanelController::openItem(int index)
         navigateTo(path);
         setCurrentIndex(0);
     } else {
-        emit fileActivated(path);
+        emit fileOpenRequested(path);
     }
 }
 

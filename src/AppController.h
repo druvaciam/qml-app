@@ -170,7 +170,7 @@ public:
 signals:
   void activePanelIndexChanged(int index);
   void showMessageRequested(const QString &title, const QString &message);
-  void requestPreviewFile(const QString &filePath);
+  void requestOpenInDefaultApp(const QString &filePath);
   void draggedPathsChanged();
   void clipboardChanged();
 

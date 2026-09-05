@@ -88,8 +88,10 @@ AppController::AppController(QObject *parent)
     loadSession();
     saveSession();
 
-    connect(m_leftPanel, &PanelController::fileActivated, this, &AppController::requestPreviewFile);
-    connect(m_rightPanel, &PanelController::fileActivated, this, &AppController::requestPreviewFile);
+    connect(m_leftPanel, &PanelController::fileOpenRequested, this,
+            &AppController::requestOpenInDefaultApp);
+    connect(m_rightPanel, &PanelController::fileOpenRequested, this,
+            &AppController::requestOpenInDefaultApp);
 
     connect(m_leftPanel, &PanelController::currentPathChanged, this, &AppController::saveSession);
     connect(m_rightPanel, &PanelController::currentPathChanged, this, &AppController::saveSession);

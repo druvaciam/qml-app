@@ -111,6 +111,10 @@ public:
     /**
      * @brief Open item at index: enters subdirectory or launches file via system default app.
      */
+    /// Enter, or a double click. A folder is opened in the panel; a file
+    /// is handed to whichever application the system associates with it,
+    /// as Explorer does. F3 is the way to see a file without leaving the
+    /// application.
     Q_INVOKABLE void openItem(int index);
 
     /**
@@ -174,7 +178,8 @@ signals:
     /// used to close the editor and leave you where you were, with nothing to
     /// tell a typo apart from a folder that simply looks similar.
     void navigationError(const QString &message);
-    void fileActivated(const QString &filePath);
+    /// A file was activated and should be opened by the system.
+    void fileOpenRequested(const QString &filePath);
     /// A shell command created exactly one new item; the view should put it
     /// into inline rename, the way Explorer does after New > Text Document.
     void inlineRenameRequested(int index);

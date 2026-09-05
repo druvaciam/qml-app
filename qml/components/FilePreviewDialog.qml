@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Window
 import QmlCommander
 
 Rectangle {
@@ -11,6 +12,14 @@ Rectangle {
     property string filePath: ""
     property var fileData: ({})
     property bool isOpen: false
+    /// Full screen: the application window takes the whole monitor and the
+    /// preview fills it, instead of sitting as a card in the middle. Double
+    /// clicking the picture in the media player turns this on and off.
+    property bool expanded: false
+    /// What the window looked like before, so leaving full screen puts it back
+    /// the way the user had it rather than always dropping it to a plain
+    /// window when it had been maximised.
+    property int visibilityBeforeExpand: Window.Windowed
     property bool isEditMode: false
     property string saveError: ""
     property string saveNotice: ""
@@ -25,6 +34,24 @@ Rectangle {
     focus: isOpen
 
     signal closed()
+
+    /// Full screen is a property of the window, not of this dialog, so the two
+    /// are changed together here and nowhere else.
+    function setExpanded(on) {
+        if (on === expanded) {
+            return
+        }
+        const win = Window.window
+        if (win) {
+            if (on) {
+                visibilityBeforeExpand = win.visibility
+                win.visibility = Window.FullScreen
+            } else {
+                win.visibility = visibilityBeforeExpand
+            }
+        }
+        expanded = on
+    }
 
     function open(path, editMode = false) {
         filePath = path
@@ -142,11 +169,29 @@ Rectangle {
     Shortcut {
         sequences: [StandardKey.Cancel]   // Escape
         enabled: root.isOpen
-        onActivated: root.close()
+        onActivated: {
+            // Escape leaves the enlarged view first and closes the window only
+            // when it is already at its normal size, so the key never throws
+            // away more than the user asked it to.
+            if (root.expanded) {
+                root.setExpanded(false)
+            } else {
+                root.close()
+            }
+        }
     }
 
     function close() {
+        // Stopped before the data is cleared. Without this the sound carries on
+        // after the window has gone, and the file stays open, so it cannot be
+        // deleted or moved until the application exits.
+        if (mediaLoader.item) {
+            mediaLoader.item.stopPlayback()
+        }
         isOpen = false
+        // Leaves full screen too, so closing the preview never strands the
+        // window with no title bar.
+        setExpanded(false)
         filePath = ""
         fileData = ({})
         root.closed()
@@ -158,10 +203,14 @@ Rectangle {
     }
 
     Rectangle {
-        width: Math.min(parent.width - 60, 960)
-        height: Math.min(parent.height - 60, 680)
+        objectName: "previewCard"
+        // Enlarged, the card takes the whole window; the rounded corners and
+        // the border go with it, since there is no longer anything behind it
+        // for them to sit against.
+        width: root.expanded ? parent.width : Math.min(parent.width - 60, 960)
+        height: root.expanded ? parent.height : Math.min(parent.height - 60, 680)
         anchors.centerIn: parent
-        radius: Theme.radiusLarge
+        radius: root.expanded ? 0 : Theme.radiusLarge
         color: Theme.bgDialog
         border.color: Theme.borderActive
         border.width: 1
@@ -373,7 +422,74 @@ Rectangle {
                     }
                 }
 
-                // 2. Image Viewer
+                // 2. Audio and video.
+                //
+                // Loaded from a separate file rather than declared here: that
+                // file imports QtMultimedia, and a QML file importing a module
+                // the install does not have will not compile. The build only
+                // includes it when Qt Multimedia was found, and this Loader
+                // only asks for it when the service reports it is there.
+                Loader {
+                    id: mediaLoader
+                    objectName: "mediaLoader"
+                    anchors.fill: parent
+                    visible: !!(root.fileData && (root.fileData.isAudio || root.fileData.isVideo))
+                    active: visible && previewService.mediaSupported
+                    source: active ? "MediaPlayerPanel.qml" : ""
+
+                    onLoaded: {
+                        item.isVideo = !!root.fileData.isVideo
+                        item.source = root.fileData.fileUrl || ""
+                    }
+                }
+
+                // The player only exists once a media file is opened, so its
+                // signal is connected here rather than on the component itself.
+                // A null target is allowed and simply connects nothing, which
+                // is the case for every other kind of file.
+                Connections {
+                    target: mediaLoader.item
+                    function onFullScreenToggleRequested() {
+                        root.setExpanded(!root.expanded)
+                    }
+                }
+
+                // Shown in place of the player when the build has no Qt
+                // Multimedia, so the window explains itself instead of
+                // appearing broken.
+                ColumnLayout {
+                    anchors.centerIn: parent
+                    width: parent.width - 60
+                    spacing: 10
+                    visible: !!(root.fileData && (root.fileData.isAudio || root.fileData.isVideo))
+                             && !previewService.mediaSupported
+
+                    Text {
+                        Layout.alignment: Qt.AlignHCenter
+                        text: "🎬"
+                        font.pixelSize: 48
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        horizontalAlignment: Text.AlignHCenter
+                        wrapMode: Text.WordWrap
+                        text: qsTr("This build has no media support, so this file cannot be played here.")
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.fontSizeBase
+                        color: Theme.textPrimary
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        horizontalAlignment: Text.AlignHCenter
+                        wrapMode: Text.WordWrap
+                        text: qsTr("Qt Multimedia was not present when the application was built. Press F3 or use Open to play it in the system player.")
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.fontSizeSmall
+                        color: Theme.textSecondary
+                    }
+                }
+
+                // 3. Image Viewer
                 Item {
                     anchors.fill: parent
                     visible: !!(root.fileData && root.fileData.isImage)
@@ -386,7 +502,12 @@ Rectangle {
                             id: previewImage
                             Layout.fillWidth: true
                             Layout.fillHeight: true
-                            source: root.fileData.fileUrl || ""
+                            // Hiding the section is not enough: an Image with a
+                            // source still loads it, so a sound or video file
+                            // was being handed to the image decoder and logging
+                            // "Unsupported image format" every time.
+                            source: root.fileData && root.fileData.isImage
+                                    ? (root.fileData.fileUrl || "") : ""
                             fillMode: Image.PreserveAspectFit
                             asynchronous: true
                         }
@@ -404,7 +525,10 @@ Rectangle {
                 // 3. Binary / Other File View
                 ColumnLayout {
                     anchors.centerIn: parent
-                    visible: Boolean(!root.fileData?.isText && !root.fileData?.isImage)
+                    // Audio and video have their own section above. Without
+                    // excluding them here, this drew on top of a playing video.
+                    visible: Boolean(!root.fileData?.isText && !root.fileData?.isImage
+                                     && !root.fileData?.isAudio && !root.fileData?.isVideo)
                     spacing: 12
 
                     Text {
@@ -608,8 +732,43 @@ Rectangle {
             event.accepted = true
             return
         }
+        if (event.key === Qt.Key_Space && mediaLoader.item) {
+            mediaLoader.item.togglePlay()
+            event.accepted = true
+            return
+        }
+        // Up and down are the volume, in the same 5% steps the wheel uses.
+        if ((event.key === Qt.Key_Up || event.key === Qt.Key_Down)
+                && mediaLoader.item) {
+            mediaLoader.item.changeVolume(event.key === Qt.Key_Up ? 0.05 : -0.05)
+            event.accepted = true
+            return
+        }
+        // Left and right step through the file, the way a player is expected
+        // to. Ten seconds is the usual size of that step.
+        if ((event.key === Qt.Key_Right || event.key === Qt.Key_Left)
+                && mediaLoader.item) {
+            mediaLoader.item.seekBy(event.key === Qt.Key_Right ? 10000 : -10000)
+            event.accepted = true
+            return
+        }
+        // Enter on a playing file does what a double click on the picture does,
+        // since both mean "fill the screen with this".
+        if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter)
+                && mediaLoader.item) {
+            root.setExpanded(!root.expanded)
+            event.accepted = true
+            return
+        }
         if (event.key === Qt.Key_Escape) {
-            root.close()
+            // Same order as the Escape shortcut: leave full screen first, close
+            // second. The shortcut normally gets the key before this handler
+            // does, and the two must not disagree about what Escape means.
+            if (root.expanded) {
+                root.setExpanded(false)
+            } else {
+                root.close()
+            }
         }
         // Nothing else travels on to the panels behind a modal.
         event.accepted = true

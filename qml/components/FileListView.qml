@@ -703,6 +703,7 @@ FocusScope {
     // File List
     ListView {
         id: listView
+        objectName: "fileList"
         anchors.top: headerRow.bottom
         anchors.bottom: parent.bottom
         anchors.left: parent.left

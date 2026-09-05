@@ -13,6 +13,11 @@ public:
     explicit FilePreviewService(QObject *parent = nullptr);
     ~FilePreviewService() override = default;
 
+    /// True when the build has Qt Multimedia. The module is optional, so the
+    /// interface offers a player only when it is there.
+    Q_PROPERTY(bool mediaSupported READ mediaSupported CONSTANT)
+    static bool mediaSupported();
+
     Q_INVOKABLE QVariantMap loadPreview(const QString &filePath, int maxBytes = 256 * 1024);
     Q_INVOKABLE bool saveTextFile(const QString &filePath, const QString &content);
     Q_INVOKABLE bool openInDefaultApp(const QString &filePath);
