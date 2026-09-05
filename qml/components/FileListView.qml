@@ -12,6 +12,21 @@ FocusScope {
     id: rootListView
     required property PanelController controller
 
+    /// The application object, passed in rather than looked up. Declared
+    /// with its type so the QML compiler can resolve what is read from it;
+    /// reaching a name out of the surrounding file works at runtime but
+    /// leaves every binding that mentions it to the interpreter.
+    required property AppController appController
+
+    /// Dragging rows between panels is arranged by the window, which owns
+    /// both of them and the thing being dragged. The list only reports
+    /// what the mouse did.
+    signal requestDragStart(var controller, var paths, string fileName,
+                            bool isDir, real x, real y, int modifiers)
+    signal requestDragUpdate(real x, real y, int modifiers)
+    signal requestDragEnd(real x, real y, int modifiers)
+    signal requestDragCancel()
+
     signal itemActivated(int index, string path, bool isDir)
     signal requestContextMenu(int index, real globalX, real globalY)
     signal requestDelete(bool permanent)
@@ -545,11 +560,14 @@ FocusScope {
             }
             clearDragHover()
 
+            // The guards these lines used to carry - typeof appCtrl !==
+            // "undefined" - were there because the name came from another
+            // file and might not resolve. A required property always does.
             let paths = []
-            if (drop.hasUrls && typeof appCtrl !== "undefined") {
-                paths = appCtrl.urlsToPaths(drop.urls)
-            } else if (typeof appCtrl !== "undefined" && appCtrl.draggedPaths && appCtrl.draggedPaths.length > 0) {
-                paths = appCtrl.draggedPaths
+            if (drop.hasUrls) {
+                paths = rootListView.appController.urlsToPaths(drop.urls)
+            } else if (rootListView.appController.draggedPaths.length > 0) {
+                paths = rootListView.appController.draggedPaths
             }
 
             function normalizePath(p) {
@@ -586,9 +604,7 @@ FocusScope {
                 drop.accept(isMove ? Qt.MoveAction : Qt.CopyAction)
                 rootListView.requestDropCopy(paths, dest, isMove)
             }
-            if (typeof appCtrl !== "undefined") {
-                appCtrl.clearDraggedPaths()
-            }
+            rootListView.appController.clearDraggedPaths()
         }
     }
 
@@ -868,7 +884,7 @@ FocusScope {
                 onPositionChanged: (mouse) => {
                     let pt = rowMouse.mapToItem(null, mouse.x, mouse.y)
                     if (isDragActive) {
-                        window.updateGlobalDrag(pt.x, pt.y, mouse.modifiers)
+                        rootListView.requestDragUpdate(pt.x, pt.y, mouse.modifiers)
                     } else if (!isParent && (mouse.buttons & Qt.LeftButton)) {
                         let dx = Math.abs(pt.x - pressRootX)
                         let dy = Math.abs(pt.y - pressRootY)
@@ -876,7 +892,9 @@ FocusScope {
                             renameClickTimer.stop()
                             isDragActive = true
                             let paths = rootListView.controller.getDragPaths(index)
-                            window.startGlobalDrag(rootListView.controller, paths, fileName, isDir, pt.x, pt.y, mouse.modifiers)
+                            rootListView.requestDragStart(rootListView.controller, paths,
+                                                          fileName, isDir,
+                                                          pt.x, pt.y, mouse.modifiers)
                         }
                     } else if (renameClickTimer.running) {
                         let dx = Math.abs(mouse.x - lastPressX)
@@ -891,7 +909,7 @@ FocusScope {
                     if (isDragActive) {
                         isDragActive = false
                         let pt = rowMouse.mapToItem(null, mouse.x, mouse.y)
-                        window.endGlobalDrag(pt.x, pt.y, mouse.modifiers)
+                        rootListView.requestDragEnd(pt.x, pt.y, mouse.modifiers)
                         return
                     }
                     if (mouse.button === Qt.LeftButton) {
@@ -915,7 +933,7 @@ FocusScope {
                     renameClickTimer.stop()
                     if (isDragActive) {
                         isDragActive = false
-                        window.cancelGlobalDrag()
+                        rootListView.requestDragCancel()
                     }
                 }
 

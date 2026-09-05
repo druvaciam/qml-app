@@ -232,7 +232,7 @@ ApplicationWindow {
         Rectangle {
             id: titleBar
             Layout.fillWidth: true
-            height: 42
+            Layout.preferredHeight: 42
             color: Theme.bgHeader
             border.color: Theme.borderSubtle
             border.width: 1
@@ -281,8 +281,8 @@ ApplicationWindow {
                     }
 
                     Rectangle {
-                        height: 18
-                        width: tagText.width + 10
+                        Layout.preferredHeight: 18
+                        Layout.preferredWidth: tagText.width + 10
                         radius: 9
                         color: Theme.bgSelected
 
@@ -306,8 +306,8 @@ ApplicationWindow {
 
                     // Swap Panes Button
                     Rectangle {
-                        height: 28
-                        width: swapLabel.width + 16
+                        Layout.preferredHeight: 28
+                        Layout.preferredWidth: swapLabel.width + 16
                         radius: Theme.radiusSmall
                         color: topSwapMouse.containsMouse ? Theme.bgHover : Theme.bgPanel
                         border.color: Theme.borderSubtle
@@ -332,8 +332,8 @@ ApplicationWindow {
 
                     // Equalize Panes Button
                     Rectangle {
-                        height: 28
-                        width: eqLabel.width + 16
+                        Layout.preferredHeight: 28
+                        Layout.preferredWidth: eqLabel.width + 16
                         radius: Theme.radiusSmall
                         color: topEqMouse.containsMouse ? Theme.bgHover : Theme.bgPanel
                         border.color: Theme.borderSubtle
@@ -358,8 +358,8 @@ ApplicationWindow {
 
                     // Terminal Button
                     Rectangle {
-                        height: 28
-                        width: termLabel.width + 16
+                        Layout.preferredHeight: 28
+                        Layout.preferredWidth: termLabel.width + 16
                         radius: Theme.radiusSmall
                         color: topTermMouse.containsMouse ? Theme.bgHover : Theme.bgPanel
                         border.color: Theme.borderSubtle
@@ -384,8 +384,8 @@ ApplicationWindow {
 
                     // Refresh Button
                     Rectangle {
-                        width: 28
-                        height: 28
+                        Layout.preferredWidth: 28
+                        Layout.preferredHeight: 28
                         radius: Theme.radiusSmall
                         color: topRefrMouse.containsMouse ? Theme.bgHover : Theme.bgPanel
                         border.color: Theme.borderSubtle
@@ -412,8 +412,8 @@ ApplicationWindow {
 
                 // Separator
                 Rectangle {
-                    width: 1
-                    height: 20
+                    Layout.preferredWidth: 1
+                    Layout.preferredHeight: 20
                     color: Theme.borderSubtle
                     Layout.alignment: Qt.AlignVCenter
                     Layout.leftMargin: 4
@@ -424,7 +424,7 @@ ApplicationWindow {
                 Row {
                     Layout.alignment: Qt.AlignVCenter | Qt.AlignRight
                     spacing: 0
-                    height: 42
+                    Layout.preferredHeight: 42
 
                     // Minimize
                     Rectangle {
@@ -540,6 +540,13 @@ ApplicationWindow {
                 SplitView.preferredWidth: parent.width / 2
                 SplitView.minimumWidth: 320
                 controller: appCtrl.leftPanel
+                appController: appCtrl
+
+                onRequestDragStart: (controller, paths, fileName, isDir, x, y, modifiers) =>
+                    window.startGlobalDrag(controller, paths, fileName, isDir, x, y, modifiers)
+                onRequestDragUpdate: (x, y, modifiers) => window.updateGlobalDrag(x, y, modifiers)
+                onRequestDragEnd: (x, y, modifiers) => window.endGlobalDrag(x, y, modifiers)
+                onRequestDragCancel: window.cancelGlobalDrag()
                 onRequestDelete: (permanent) => executeDelete(permanent)
                 onRequestCopy: executeCopy()
                 onRequestMove: executeMove()
@@ -554,6 +561,13 @@ ApplicationWindow {
                 SplitView.preferredWidth: parent.width / 2
                 SplitView.minimumWidth: 320
                 controller: appCtrl.rightPanel
+                appController: appCtrl
+
+                onRequestDragStart: (controller, paths, fileName, isDir, x, y, modifiers) =>
+                    window.startGlobalDrag(controller, paths, fileName, isDir, x, y, modifiers)
+                onRequestDragUpdate: (x, y, modifiers) => window.updateGlobalDrag(x, y, modifiers)
+                onRequestDragEnd: (x, y, modifiers) => window.endGlobalDrag(x, y, modifiers)
+                onRequestDragCancel: window.cancelGlobalDrag()
                 onRequestDelete: (permanent) => executeDelete(permanent)
                 onRequestCopy: executeCopy()
                 onRequestMove: executeMove()
@@ -817,8 +831,8 @@ ApplicationWindow {
                     Layout.fillWidth: true
                     Item { Layout.fillWidth: true }
                     Rectangle {
-                        width: 80
-                        height: 30
+                        Layout.preferredWidth: 80
+                        Layout.preferredHeight: 30
                         radius: Theme.radiusSmall
                         color: msgOkMouse.containsMouse ? Theme.accentHover : Theme.accent
                         Text {
@@ -1049,8 +1063,8 @@ ApplicationWindow {
 
             // Action Tag badge (Copy, Move, or Gray Cancel when invalid)
             Rectangle {
-                width: actionTagText.implicitWidth + 10
-                height: 20
+                Layout.preferredWidth: actionTagText.implicitWidth + 10
+                Layout.preferredHeight: 20
                 radius: 3
                 color: !window.dragIsValidTarget ? "#475569" : (window.dragIsMove ? "#f59e0b" : Theme.accent)
 

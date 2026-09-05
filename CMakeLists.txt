@@ -52,6 +52,11 @@ qt_add_qml_module(appQmlCommander
     URI QmlCommander
     VERSION 1.0
     RESOURCE_PREFIX "/"
+    # Theme exposes QColor properties. Without naming QtQuick as a dependency,
+    # the generated type description has no entry for QColor, so tools reading
+    # it - qmllint, and the compiler that turns bindings into C++ - cannot tell
+    # what Theme.accent is and fall back to the interpreter for every use.
+    DEPENDENCIES QtQuick
     SOURCES
         src/Theme.h
         src/Logging.h

@@ -633,18 +633,13 @@ void FileListModel::applyFolderSize(const QString &path, qint64 bytes)
     const QString shown = (bytes < 0) ? QStringLiteral("...")
                                       : formatSize(bytes, false);
 
-    // m_allItems is updated too, so the number survives a filter change or a
-    // rescan that finds the folder unchanged - both rebuild m_items from it.
-    for (FileItem &it : m_allItems) {
-        if (it.fullPath == path) {
-            if (bytes >= 0) {
-                it.size = bytes;
-            }
-            it.formattedSize = shown;
-            break;
-        }
-    }
-
+    // Deliberately only the visible rows. m_allItems is what gets written to
+    // the folder cache, and a count that is still running would put "..." in
+    // there - to be shown again on the next visit with no job to replace it.
+    // A rescan that finds nothing changed leaves these rows alone, which is
+    // what keeps the number on screen; anything that rebuilds them drops it,
+    // and recounting is a keypress.
+    //
     // Found by path rather than by the index that was passed in: sorting or
     // filtering can move the row while the count is running, and it may no
     // longer be on screen at all.
@@ -1105,8 +1100,14 @@ bool FileListModel::listingsMatch(const QList<FileItem> &a, const QList<FileItem
             return false;
         }
         const FileItem *other = found.value();
+        // Size is compared for files only. A directory is always scanned with a
+        // size of zero, so the two can differ for exactly one reason: Space was
+        // pressed on it and this application counted what is inside. Comparing
+        // that made every later refresh of the folder look like a change - the
+        // list was rebuilt, the scroll position and cursor were lost, and the
+        // number the user asked for was wiped in the process.
         if (other->isDir != it.isDir
-            || other->size != it.size
+            || (!it.isDir && other->size != it.size)
             || other->lastModified != it.lastModified
             || other->isHidden != it.isHidden) {
             return false;

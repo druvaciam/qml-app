@@ -626,7 +626,9 @@ void AppController::putSelectionOnClipboard(bool cut)
     dropEffect[0] = cut ? 2 : 1;
     mimeData->setData(QStringLiteral("Preferred DropEffect"), dropEffect);
 
-    // GNOME/KDE format
+    // The same thing again for Linux file managers, which read a piece of
+    // text rather than the number above. The format name is historical -
+    // one file manager invented the convention and the others followed it.
     QString gnomeData = cut ? QStringLiteral("cut\n") : QStringLiteral("copy\n");
     for (const QUrl &url : urls) {
         gnomeData += url.toString() + QLatin1Char('\n');

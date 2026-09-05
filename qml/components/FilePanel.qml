@@ -22,6 +22,15 @@ FocusScope {
     /// Set by the delay timer once a read has gone on long enough to be worth
     /// mentioning. Cleared when a new read starts.
     property bool loadIsSlow: false
+    /// Handed down to the list, which needs it for drag and drop.
+    required property AppController appController
+
+    signal requestDragStart(var controller, var paths, string fileName,
+                            bool isDir, real x, real y, int modifiers)
+    signal requestDragUpdate(real x, real y, int modifiers)
+    signal requestDragEnd(real x, real y, int modifiers)
+    signal requestDragCancel()
+
     signal requestDelete(bool permanent)
     signal requestCopy()
     signal requestMove()
@@ -67,6 +76,14 @@ FocusScope {
                 // chain stopped at the panel and the arrow keys did nothing
                 // until something else - Tab, or a click - moved focus by hand.
                 focus: true
+                appController: root.appController
+
+                onRequestDragStart: (controller, paths, fileName, isDir, x, y, modifiers) =>
+                    root.requestDragStart(controller, paths, fileName, isDir, x, y, modifiers)
+                onRequestDragUpdate: (x, y, modifiers) => root.requestDragUpdate(x, y, modifiers)
+                onRequestDragEnd: (x, y, modifiers) => root.requestDragEnd(x, y, modifiers)
+                onRequestDragCancel: root.requestDragCancel()
+
                 onRequestDelete: (permanent) => root.requestDelete(permanent)
                 onRequestCopy: root.requestCopy()
                 onRequestMove: root.requestMove()
