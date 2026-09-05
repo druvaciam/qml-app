@@ -553,6 +553,11 @@ void AppController::onFileOperationCompleted(bool success, const QString &messag
     qCDebug(lcOps).noquote() << "operation finished:" << (success ? "ok" : "failed")
                              << "- removed" << removed.size() << "created" << created.size()
                              << (m_fileOps->lastChangeIsKnown() ? "(known)" : "(not described)");
+    // Marked before the rows are applied, so they are green the moment
+    // they appear rather than at the next repaint.
+    if (success && !created.isEmpty()) {
+        FileListModel::markRecent(created);
+    }
     if (success && m_fileOps->lastChangeIsKnown() && (!removed.isEmpty() || !created.isEmpty())) {
         for (PanelController *panel : {m_leftPanel, m_rightPanel}) {
             if (!panel || !panel->model()) {

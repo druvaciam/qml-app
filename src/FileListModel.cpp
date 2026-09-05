@@ -17,6 +17,14 @@ FileListModel::FileListModel(QObject *parent)
     m_reloadTimer.setSingleShot(true);
     m_reloadTimer.setInterval(200);
     connect(&m_reloadTimer, &QTimer::timeout, this, &FileListModel::refresh);
+
+    // A minute is fine: green fading a minute late is not worth a faster
+    // timer, and a tick over an unchanged folder costs one loop over the
+    // visible rows.
+    m_recentFadeTimer.setInterval(60 * 1000);
+    connect(&m_recentFadeTimer, &QTimer::timeout,
+            this, &FileListModel::onRecentFadeTick);
+    m_recentFadeTimer.start();
 }
 
 int FileListModel::rowCount(const QModelIndex &parent) const
@@ -64,6 +72,8 @@ QVariant FileListModel::data(const QModelIndex &index, int role) const
         return item.permissions;
     case IsSelectedRole:
         return item.isSelected;
+    case IsRecentRole:
+        return isRecent(item);
     default:
         return QVariant();
     }
@@ -106,7 +116,8 @@ QHash<int, QByteArray> FileListModel::roleNames() const
         {FormattedModifiedRole, "formattedModified"},
         {FileTypeRole, "fileType"},
         {PermissionsRole, "permissions"},
-        {IsSelectedRole, "isSelected"}
+        {IsSelectedRole, "isSelected"},
+        {IsRecentRole, "isRecent"}
     };
     return roles;
 }
@@ -227,6 +238,11 @@ bool FileListModel::belongsToCurrentFolder(const QString &path) const
 /// string. The old comparison ran QDir::cleanPath over both sides on every
 /// single test, which is two allocations per comparison - fine in a loop of
 /// ten, ruinous in a loop of forty-seven million.
+/// Path to the moment it was written. Shared by both panels: a file copied
+/// in one is just as new in the other, and the same folder can be open on
+/// both sides.
+static QHash<QString, QDateTime> s_recentPaths;
+
 static QString pathKey(const QString &path)
 {
 #ifdef Q_OS_WIN
@@ -509,8 +525,13 @@ void FileListModel::refreshItem(const QString &filePath)
         item.permissions = formatPermissions(info);
 
         const QModelIndex idx = index(i, 0);
+        // IsRecentRole belongs in this list: the row's modification time just
+        // changed, so whether it counts as recently changed did too. Leaving it
+        // out redrew the new date next to the old colour - a file saved from
+        // the editor stayed uncoloured until something else rebuilt the row.
         emit dataChanged(idx, idx, {SizeRole, FormattedSizeRole, ModifiedRole,
-                                    FormattedModifiedRole, PermissionsRole});
+                                    FormattedModifiedRole, PermissionsRole,
+                                    IsRecentRole});
         // The status bar totals the size of marked items, so they can change too.
         if (item.isSelected) {
             updateSelectionStats();
@@ -852,6 +873,71 @@ QString FileListModel::getSelectedSummary() const
     return QString("%1 item(s) selected (%2)").arg(m_selectedCount).arg(selectedSizeFormatted());
 }
 
+void FileListModel::markRecent(const QStringList &paths)
+{
+    const QDateTime now = QDateTime::currentDateTime();
+    for (const QString &p : paths) {
+        s_recentPaths.insert(pathKey(p), now);
+    }
+    pruneRecent();
+}
+
+void FileListModel::pruneRecent()
+{
+    const QDateTime cutoff = QDateTime::currentDateTime().addSecs(-kRecentMinutes * 60);
+    for (auto it = s_recentPaths.begin(); it != s_recentPaths.end();) {
+        if (it.value() < cutoff) {
+            it = s_recentPaths.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
+bool FileListModel::isRecent(const FileItem &item)
+{
+    if (item.isParent) {
+        return false;                 // ".." is not a file
+    }
+    const QDateTime cutoff = QDateTime::currentDateTime().addSecs(-kRecentMinutes * 60);
+
+    // Written by one of this application's own operations. Needed as well as
+    // the date below because a copy keeps the date of the original, so a file
+    // copied a moment ago can be years old by its timestamp.
+    const auto marked = s_recentPaths.constFind(pathKey(item.fullPath));
+    if (marked != s_recentPaths.constEnd() && marked.value() >= cutoff) {
+        return true;
+    }
+
+    // Or changed by anything else in the same window of time.
+    return item.lastModified.isValid() && item.lastModified >= cutoff;
+}
+
+/// Nothing has to happen in the folder for a row to stop being new, so the
+/// view is asked to re-read that one role from time to time. Only the role is
+/// announced, so this repaints colours rather than rebuilding rows, and it
+/// does nothing at all once no row on screen is green any more.
+void FileListModel::onRecentFadeTick()
+{
+    if (m_items.isEmpty()) {
+        return;
+    }
+    bool any = false;
+    for (const FileItem &it : m_items) {
+        if (isRecent(it)) {
+            any = true;
+            break;
+        }
+    }
+    if (!any && !m_hadRecentRows) {
+        return;
+    }
+    m_hadRecentRows = any;
+    pruneRecent();
+    emit dataChanged(index(0, 0), index(static_cast<int>(m_items.size()) - 1, 0),
+                     {IsRecentRole});
+}
+
 QVariantMap FileListModel::get(int index) const
 {
     QVariantMap map;
@@ -871,6 +957,7 @@ QVariantMap FileListModel::get(int index) const
         map["fileType"] = it.fileType;
         map["permissions"] = it.permissions;
         map["isSelected"] = it.isSelected;
+        map["isRecent"] = isRecent(it);
     }
     return map;
 }

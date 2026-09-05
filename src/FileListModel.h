@@ -78,7 +78,11 @@ public:
         FormattedModifiedRole,
         FileTypeRole,
         PermissionsRole,
-        IsSelectedRole
+        IsSelectedRole,
+        /// True for a row that has changed since the application started,
+        /// or that one of its own copy, move or new-folder operations
+        /// produced. Not stored on the row - worked out when asked.
+        IsRecentRole
     };
     Q_ENUM(FileRoles)
 
@@ -178,6 +182,10 @@ public:
     /// for "..", so the caller does not have to check first. Asking for a
     /// folder already being counted is ignored rather than started twice.
     Q_INVOKABLE void calculateFolderSize(int index);
+    /// Remembers paths as newly written, for every panel. Called when a
+    /// copy, move or new folder finishes: those files keep the date they
+    /// had at the source, so the clock alone would not notice them.
+    static void markRecent(const QStringList &paths);
     Q_INVOKABLE void setRowSelected(int index, bool selected);
     Q_INVOKABLE void selectOnly(int index);
     Q_INVOKABLE void selectRange(int fromIndex, int toIndex, bool clearOthers = true);
@@ -250,6 +258,10 @@ private:
     /// Runs on a worker thread: adds up every file below path. Static and
     /// taking only a path, so it touches nothing the GUI thread owns.
     static qint64 directorySize(const QString &path);
+    static bool isRecent(const FileItem &item);
+    /// Drops marks that have aged out, so the set cannot grow all day.
+    static void pruneRecent();
+    void onRecentFadeTick();
     void applyFolderSize(const QString &path, qint64 bytes);
     static QString formatPermissions(const QFileInfo &info);
 
@@ -272,12 +284,26 @@ private:
     /// does not start a second walk of the same tree.
     QSet<QString> m_sizeJobs;
 
+    /// Green has to stop on its own, without anything happening in the folder.
+    /// This asks the view to re-read that one role now and then.
+    QTimer m_recentFadeTimer;
+    bool m_hadRecentRows = false;
+
     QHash<QString, QList<FileItem>> m_listingCache;
     QStringList m_cacheOrder;               // least recently used first
     /// Generous on purpose. An entry costs a hash slot and a string; what
     /// actually bounds the memory is the row budget below, so there is little
     /// point being stingy with the count. A long browsing session keeps its
     /// history rather than losing folders it will come back to.
+    /// How long a row stays green.
+    ///
+    /// A window of time rather than "since the application started": left open
+    /// all day, that would keep colouring things that stopped being news hours
+    /// ago, and the list of marked paths would grow the whole time. Fifteen
+    /// minutes is long enough to still find what a copy produced after looking
+    /// somewhere else, and short enough that green keeps meaning "just now".
+    static constexpr int kRecentMinutes = 15;
+
     static constexpr int kCacheFolders = 100;
 
     /// Roughly 100 MB of cached rows.

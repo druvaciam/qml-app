@@ -997,7 +997,13 @@ FocusScope {
                         font.family: Theme.fontFamily
                         font.pixelSize: Theme.fontSizeBase
                         font.bold: isDir
-                        color: isSelected ? Theme.textSelected : (isDir ? Theme.fileFolder : Theme.textPrimary)
+                        // Green marks a row written since the window was
+                        // opened, or produced by one of this application's
+                        // own operations. Selection still wins, so a
+                        // selected row never changes meaning.
+                        color: isSelected ? Theme.textSelected
+                                          : (isRecent ? Theme.success
+                                                      : (isDir ? Theme.fileFolder : Theme.textPrimary))
                         elide: Text.ElideRight
                         visible: rootListView.editingIndex !== index
                     }
@@ -1143,7 +1149,9 @@ FocusScope {
                     text: formattedSize
                     font.family: Theme.fontMono
                     font.pixelSize: Theme.fontSizeSmall
-                    color: isDir ? Theme.fileFolder : (isSelected ? "#e0f2fe" : Theme.textPrimary)
+                    color: isSelected ? "#e0f2fe"
+                                      : (isRecent ? Theme.success
+                                                  : (isDir ? Theme.fileFolder : Theme.textPrimary))
                 }
 
                 // Formatted Modified Date
@@ -1153,7 +1161,8 @@ FocusScope {
                     text: formattedModified
                     font.family: Theme.fontMono
                     font.pixelSize: Theme.fontSizeSmall
-                    color: isSelected ? "#e0f2fe" : Theme.textMuted
+                    color: isSelected ? "#e0f2fe"
+                                      : (isRecent ? Theme.success : Theme.textMuted)
                     elide: Text.ElideRight
                 }
             }
@@ -1166,9 +1175,10 @@ FocusScope {
                 rootListView.isReloadingSamePath = false
                 rootListView.selectionAnchorIndex = -1
             }
-            function onFileActivated(filePath) {
-                // A file was opened (double click, Enter, or F3/F4). Any rename
-                // waiting on its timer must not surface behind the dialog.
+            function onFileOpenRequested(filePath) {
+                // A file was opened with Enter or a double click. Any rename
+                // waiting on its timer must not surface behind whatever the
+                // system puts on screen for it.
                 renameClickTimer.stop()
                 rootListView.endInlineRename()
             }
