@@ -173,6 +173,11 @@ public:
     bool reloadSuspended() const { return m_reloadSuspended; }
     Q_INVOKABLE void toggleSort(int column);
     Q_INVOKABLE void toggleSelection(int index);
+    /// Counts everything inside this row's folder, on a worker thread,
+    /// and puts the total in its Size column. Does nothing for a file or
+    /// for "..", so the caller does not have to check first. Asking for a
+    /// folder already being counted is ignored rather than started twice.
+    Q_INVOKABLE void calculateFolderSize(int index);
     Q_INVOKABLE void setRowSelected(int index, bool selected);
     Q_INVOKABLE void selectOnly(int index);
     Q_INVOKABLE void selectRange(int fromIndex, int toIndex, bool clearOthers = true);
@@ -242,6 +247,10 @@ private:
     void finishDelta();
     static QString detectFileType(const QFileInfo &info);
     static QString formatSize(qint64 bytes, bool isDir);
+    /// Runs on a worker thread: adds up every file below path. Static and
+    /// taking only a path, so it touches nothing the GUI thread owns.
+    static qint64 directorySize(const QString &path);
+    void applyFolderSize(const QString &path, qint64 bytes);
     static QString formatPermissions(const QFileInfo &info);
 
     QString m_currentPath;
@@ -258,6 +267,10 @@ private:
     /// Whether the rows currently on screen came from the cache. If they did,
     /// the rescan must not reset the model unless it found a difference.
     bool m_servedFromCache = false;
+
+    /// Folders being counted right now, so pressing Space twice on one
+    /// does not start a second walk of the same tree.
+    QSet<QString> m_sizeJobs;
 
     QHash<QString, QList<FileItem>> m_listingCache;
     QStringList m_cacheOrder;               // least recently used first

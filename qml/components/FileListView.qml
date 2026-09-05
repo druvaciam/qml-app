@@ -1262,6 +1262,10 @@ FocusScope {
 
         Keys.onSpacePressed: {
             rootListView.controller.model.toggleSelection(currentIndex)
+            // Space on a folder also counts what is inside it, as Total
+            // Commander does. The count runs on a worker thread and the row
+            // shows "..." until it lands; on a file this does nothing.
+            rootListView.controller.model.calculateFolderSize(currentIndex)
             if (currentIndex < count - 1) currentIndex++
         }
 

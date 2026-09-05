@@ -1,5 +1,6 @@
 #include "FileListModel.h"
 #include <QDir>
+#include <QDirIterator>
 #include <QFileInfo>
 #include <QRegularExpression>
 #include <QtConcurrent>
@@ -546,6 +547,95 @@ void FileListModel::toggleSelection(int index)
             QModelIndex idx = this->index(index, 0);
             emit dataChanged(idx, idx, {IsSelectedRole});
             updateSelectionStats();
+        }
+    }
+}
+
+qint64 FileListModel::directorySize(const QString &path)
+{
+    qint64 total = 0;
+    // Every level, not just the top one: Subdirectories is what makes the walk
+    // descend, and QDir::Files only decides what it hands back on the way -
+    // folders are still entered, they are just not added up themselves. So the
+    // total is the files, not the few bytes a folder costs to exist.
+    //
+    // Symbolic links are not followed. That keeps the total honest and stops a
+    // link pointing at one of its own ancestors from running forever.
+    QDirIterator it(path,
+                    QDir::Files | QDir::Hidden | QDir::System | QDir::NoDotAndDotDot,
+                    QDirIterator::Subdirectories);
+    while (it.hasNext()) {
+        it.next();
+        total += it.fileInfo().size();
+    }
+    return total;
+}
+
+void FileListModel::calculateFolderSize(int index)
+{
+    if (index < 0 || index >= static_cast<int>(m_items.size())) {
+        return;
+    }
+    const FileItem &row = m_items.at(index);
+    if (!row.isDir || row.isParent) {
+        return;                       // a file already shows its size
+    }
+    const QString path = row.fullPath;
+    if (m_sizeJobs.contains(path)) {
+        return;                       // already being counted
+    }
+    m_sizeJobs.insert(path);
+
+    // Something has to change on screen straight away, or a large tree looks
+    // like a key that did nothing.
+    applyFolderSize(path, -1);
+
+    qCDebug(lcModel) << "folder size: counting" << path;
+
+    // One watcher per request rather than one shared: several folders can be
+    // counted at once, and each has to know which path its result belongs to.
+    auto *watcher = new QFutureWatcher<qint64>(this);
+    connect(watcher, &QFutureWatcherBase::finished, this, [this, watcher, path]() {
+        const qint64 bytes = watcher->result();
+        m_sizeJobs.remove(path);
+        applyFolderSize(path, bytes);
+        qCDebug(lcModel) << "folder size:" << path << "is" << bytes << "bytes";
+        watcher->deleteLater();
+    });
+    watcher->setFuture(QtConcurrent::run(&FileListModel::directorySize, path));
+}
+
+/// Writes the result into both lists and tells the view about the one row.
+/// A negative value means "still counting".
+void FileListModel::applyFolderSize(const QString &path, qint64 bytes)
+{
+    const QString shown = (bytes < 0) ? QStringLiteral("...")
+                                      : formatSize(bytes, false);
+
+    // m_allItems is updated too, so the number survives a filter change or a
+    // rescan that finds the folder unchanged - both rebuild m_items from it.
+    for (FileItem &it : m_allItems) {
+        if (it.fullPath == path) {
+            if (bytes >= 0) {
+                it.size = bytes;
+            }
+            it.formattedSize = shown;
+            break;
+        }
+    }
+
+    // Found by path rather than by the index that was passed in: sorting or
+    // filtering can move the row while the count is running, and it may no
+    // longer be on screen at all.
+    for (int i = 0; i < static_cast<int>(m_items.size()); ++i) {
+        if (m_items[i].fullPath == path) {
+            if (bytes >= 0) {
+                m_items[i].size = bytes;
+            }
+            m_items[i].formattedSize = shown;
+            const QModelIndex idx = this->index(i, 0);
+            emit dataChanged(idx, idx, {SizeRole, FormattedSizeRole});
+            return;
         }
     }
 }
