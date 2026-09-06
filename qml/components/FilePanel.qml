@@ -266,12 +266,40 @@ FocusScope {
                     anchors.rightMargin: 8
                     spacing: 8
 
+                    // Still reading the folder.
+                    //
+                    // The "Reading folder..." notice only covers an empty panel.
+                    // Once rows start arriving it goes, and without this there is
+                    // nothing to say the count is still climbing - a big folder
+                    // looks finished at every moment of a load that has seconds
+                    // left in it.
+                    Text {
+                        id: loadingGlass
+                        visible: root.controller.model.isLoading
+                        text: "⌛"                       // hourglass
+                        font.pixelSize: Theme.fontSizeSmall
+                        color: Theme.accent
+
+                        // A slow pulse rather than a spin: it has to read as
+                        // "working" from the corner of the eye without pulling
+                        // attention away from the rows appearing.
+                        SequentialAnimation on opacity {
+                            running: loadingGlass.visible
+                            loops: Animation.Infinite
+                            NumberAnimation { from: 1.0; to: 0.35; duration: 600 }
+                            NumberAnimation { from: 0.35; to: 1.0; duration: 600 }
+                        }
+                    }
+
                     // Total items
                     Text {
-                        text: root.controller.totalItemsCount + " item(s)"
+                        text: root.controller.model.isLoading
+                              ? root.controller.totalItemsCount + " item(s) so far"
+                              : root.controller.totalItemsCount + " item(s)"
                         font.family: Theme.fontFamily
                         font.pixelSize: Theme.fontSizeSmall
-                        color: Theme.textSecondary
+                        color: root.controller.model.isLoading ? Theme.accent
+                                                               : Theme.textSecondary
                     }
 
                     // Separator

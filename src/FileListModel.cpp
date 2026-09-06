@@ -1175,13 +1175,41 @@ void FileListModel::loadDirectory()
 
     setLoading(true);
 
+    // Batches are shown as they arrive only when the panel has nothing to
+    // show otherwise. A refresh and a folder restored from the cache both
+    // already have rows on screen; appending to those would duplicate them.
+    m_incoming.clear();
+    m_showingBatches = isNewPath && !m_servedFromCache;
+    m_partialShown.invalidate();
+
     if (!m_loadWatcher) {
         m_loadWatcher = new QFutureWatcher<QList<FileItem>>(this);
+
+        // One batch has arrived, on the GUI thread. Pointing the watcher at a
+        // new future stops these for the old one, so a read that has been
+        // overtaken cannot add rows to the folder now being looked at.
+        connect(m_loadWatcher, &QFutureWatcher<QList<FileItem>>::resultReadyAt,
+                this, [this](int index) {
+            const QList<FileItem> batch = m_loadWatcher->resultAt(index);
+            m_incoming.append(batch);
+            if (m_showingBatches && !batch.isEmpty()
+                && (!m_partialShown.isValid()
+                    || m_partialShown.elapsed() >= kPartialIntervalMs)) {
+                showPartialListing();
+                m_partialShown.restart();
+            }
+        });
+
         connect(m_loadWatcher, &QFutureWatcherBase::finished, this, [this]() {
             if (!m_loadWatcher->future().isFinished()) {
                 return;
             }
-            const QList<FileItem> fresh = m_loadWatcher->result();
+            const QList<FileItem> fresh = m_incoming;
+            m_incoming.clear();
+            // Whether rows were already put on screen while this load ran. It
+            // decides how the last rebuild is announced, below.
+            const bool showedPartials = m_showingBatches;
+            m_showingBatches = false;
             storeInCache(m_currentPath, fresh);
 
             // Rows are already on screen in two cases: they came from the cache,
@@ -1212,7 +1240,15 @@ void FileListModel::loadDirectory()
             }
 
             m_allItems = fresh;
-            rebuildVisibleItems(m_pendingIsNewPath, false, true);
+            // A folder opened for the first time normally starts at the top,
+            // which is what announcing a new path tells the view to do. But if
+            // rows were shown while it loaded, the user has had something to
+            // scroll for the whole time, and finishing the load is no reason to
+            // drag them back to row zero. Announced as a same-path rebuild
+            // instead, so the view saves where they are and puts them back -
+            // which is the top anyway when they have not touched it.
+            rebuildVisibleItems(showedPartials ? false : m_pendingIsNewPath,
+                                showedPartials, true);
             setLoading(false);
         });
     }
@@ -1290,41 +1326,91 @@ FileItem FileListModel::makeItem(const QFileInfo &info, bool selected)
     return item;
 }
 
-QList<FileItem> FileListModel::scanDirectory(const QString &path, const QSet<QString> &selectedPaths)
+void FileListModel::scanDirectory(QPromise<QList<FileItem>> &promise,
+                                 const QString &path,
+                                 const QSet<QString> &selectedPaths)
 {
-    QList<FileItem> out;
-
-    if (path.isEmpty()) {
-        return out;
+    if (path.isEmpty() || !QDir(path).exists()) {
+        promise.addResult(QList<FileItem>());
+        return;
     }
-    QDir dir(path);
-    if (!dir.exists()) {
-        return out;
-    }
-
-    // Hidden and system entries are always read. Whether they are shown is
-    // decided in rebuildVisibleItems, so toggling the switch costs nothing.
-    const QFileInfoList entries =
-        dir.entryInfoList(QDir::AllEntries | QDir::NoDotAndDotDot | QDir::Hidden | QDir::System,
-                          QDir::NoSort);
 
     QElapsedTimer readTimer;
     readTimer.start();
 
-    out.reserve(entries.size());
-    for (const QFileInfo &info : entries) {
+    // An iterator rather than entryInfoList, which builds the whole list before
+    // returning anything. On a folder big enough for this to matter, waiting for
+    // the complete enumeration is most of the wait.
+    //
+    // Hidden and system entries are always read. Whether they are shown is
+    // decided in rebuildVisibleItems, so toggling the switch costs nothing.
+    QDirIterator it(path,
+                    QDir::AllEntries | QDir::NoDotAndDotDot | QDir::Hidden | QDir::System,
+                    QDirIterator::NoIteratorFlags);
+
+    QList<FileItem> batch;
+    batch.reserve(kScanBatch);
+    int total = 0;
+    int batches = 0;
+
+    while (it.hasNext()) {
+        it.next();
+        const QFileInfo info = it.fileInfo();
+
         // A copy in progress writes one of these per file. They are the app's,
         // not the user's, and are never worth showing.
         if (FileListModel::isCopyScratchFile(info.fileName())) {
             continue;
         }
 
-        out.append(makeItem(info, selectedPaths.contains(info.absoluteFilePath())));
+        batch.append(makeItem(info, selectedPaths.contains(info.absoluteFilePath())));
+        ++total;
+
+        if (batch.size() >= kScanBatch) {
+            promise.addResult(batch);
+            ++batches;
+            batch.clear();
+            batch.reserve(kScanBatch);
+        }
     }
 
-    qCDebug(lcModel).noquote() << "read" << path << "->" << out.size() << "entries in"
-                               << readTimer.elapsed() << "ms (worker thread)";
-    return out;
+    // The remainder, and the only batch a small folder produces. Sent even when
+    // empty, so the finish handler always has at least one result to work with
+    // and an empty folder is not mistaken for a load that never delivered.
+    promise.addResult(batch);
+    ++batches;
+
+    qCDebug(lcModel).noquote() << "read" << path << "->" << total << "entries in"
+                               << readTimer.elapsed() << "ms," << batches
+                               << "batches (worker thread)";
+}
+
+/// Puts everything that has arrived so far on screen, sorted.
+///
+/// The first version of this appended each batch as it came, which is cheaper
+/// and was wrong: a directory is read back in name order, so the folders in it
+/// arrive spread through the files and sat among them until the load finished.
+/// A partial listing that is ordered differently from a finished one reads as a
+/// broken sort, not as progress.
+///
+/// So each update sorts what is in hand and rebuilds the rows. That costs a
+/// model reset, which is why it is throttled rather than done per batch.
+void FileListModel::showPartialListing()
+{
+    m_allItems = m_incoming;
+
+    // Announced as a reset pair, which does two things the view needs.
+    //
+    // It saves the scroll position and cursor before the rows are replaced and
+    // puts them back afterwards - a reset alone sends the list back to the top,
+    // so an update every 200 ms meant the wheel could not be used at all while
+    // a big folder loaded.
+    //
+    // And it sets the view's "reloading the same path" flag for the duration.
+    // Without it the row count changing makes the view move to the current row,
+    // which for a folder just opened is row zero - the same snap back to the
+    // top, by a second route.
+    rebuildVisibleItems(false, true, true);
 }
 
 void FileListModel::rebuildVisibleItems(bool isNewPath, bool announceBefore, bool announceAfter)

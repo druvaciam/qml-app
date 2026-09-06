@@ -17,7 +17,9 @@
 #include <QAbstractListModel>
 #include <QDateTime>
 #include <QFileInfo>
+#include <QElapsedTimer>
 #include <QFutureWatcher>
+#include <QPromise>
 #include <QFileSystemWatcher>
 #include <QTimer>
 #include <QSet>
@@ -240,10 +242,22 @@ private:
     /// Reads a folder into a plain list. Runs on a worker thread, so it takes
     /// everything it needs as arguments and touches no member state; it is a
     /// member only so it can reach the static formatters below.
-    static QList<FileItem> scanDirectory(const QString &path, const QSet<QString> &selectedPaths);
+    /// Reads a folder on a worker thread, handing back the entries in
+    /// batches rather than one list at the end. Every kScanBatch entries
+    /// are reported through the promise, which the watcher delivers on the
+    /// GUI thread, so a folder large enough to take a noticeable time puts
+    /// rows on screen while it is still being read.
+    static void scanDirectory(QPromise<QList<FileItem>> &promise,
+                              const QString &path,
+                              const QSet<QString> &selectedPaths);
     /// Builds one row from one file. Shared by the full scan and the targeted
     /// updates so a row can never be described two different ways.
     static FileItem makeItem(const QFileInfo &info, bool selected);
+    /// Shows what has arrived so far of a folder still being read, in the
+    /// sorted order. Appending batches as they came off the disk was tried first
+    /// and was wrong: a directory listing comes back in name order, so
+    /// folders landed among the files instead of above them.
+    void showPartialListing();
     /// The sort order, as one predicate. sortInternal uses it to sort; the
     /// targeted insert uses it to find where a new row belongs.
     bool itemLessThan(const FileItem &lhs, const FileItem &rhs) const;
@@ -274,6 +288,25 @@ private:
     /// older one's notification, so a superseded read finishes quietly and its
     /// result is never applied.
     QFutureWatcher<QList<FileItem>> *m_loadWatcher = nullptr;
+    /// Batches as they arrive, assembled into the full listing the finish
+    /// handler works with. Cleared when a load starts, so a superseded
+    /// read cannot contribute to the next one.
+    QList<FileItem> m_incoming;
+    /// True while batches are being shown as they arrive. Only a first
+    /// visit to a folder does that - a refresh and a cached folder both
+    /// have rows on screen already, and appending to those would be wrong.
+    bool m_showingBatches = false;
+
+    /// Entries per batch. Small enough that the first rows appear quickly
+    /// on a slow folder, large enough that the cost of announcing them is
+    /// nothing next to reading them.
+    static constexpr int kScanBatch = 1000;
+
+    /// How often a partial listing is put on screen. Each one sorts what
+    /// has arrived and rebuilds the rows, so doing it for every batch of a
+    /// fast folder is wasted work the user cannot even see.
+    static constexpr int kPartialIntervalMs = 200;
+    QElapsedTimer m_partialShown;
     bool m_pendingIsNewPath = false;
     bool m_isLoading = false;
     /// Whether the rows currently on screen came from the cache. If they did,
