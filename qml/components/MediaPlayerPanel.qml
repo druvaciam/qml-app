@@ -31,6 +31,16 @@ Item {
     /// get, and asking its parent directly would tie it to that one window.
     signal fullScreenToggleRequested()
 
+    /// Emitted on a click or a wheel turn over the picture. The preview window
+    /// counts these as the user being present, alongside mouse movement and
+    /// keys, which it sees on its own.
+    signal interacted()
+
+    /// Set by the preview window in full-screen video after ten idle seconds:
+    /// the seek bar and the transport row go away, the picture loses its
+    /// rounded corners and margin, and the mouse pointer is hidden over it.
+    property bool controlsHidden: false
+
     onSourceChanged: {
         player.stop()
         player.source = root.source
@@ -78,32 +88,48 @@ Item {
             console.warn("media: cannot play", root.source, "-", errorString)
         }
 
+        // The file this has already been logged for. The status passes
+        // through LoadedMedia and then BufferedMedia, and logging on both
+        // wrote every line twice.
+        property url loggedFor: ""
+
         // Once the file is opened its tracks are known. Logged because "there
         // is no sound" has several causes that look identical on screen: a file
         // with no audio track at all, a track the decoder cannot handle, and an
         // output device that is not playing.
+        //
+        // One line at info level, so a normal run shows one line per file
+        // opened - the same weight as a folder navigation. The per-track
+        // detail is debug level and appears only in a debug build; it was at
+        // warning level while the silence report was being chased, which made
+        // every video preview look like six things had gone wrong.
         onMediaStatusChanged: {
-            if (mediaStatus === MediaPlayer.LoadedMedia || mediaStatus === MediaPlayer.BufferedMedia) {
-                console.warn("media:", root.source,
-                             "| audio track:", player.hasAudio,
-                             "| video track:", player.hasVideo,
-                             "| duration:", player.duration, "ms",
-                             "| volume:", audio.volume,
-                             "| muted:", audio.muted,
-                             "| device:", audio.device ? audio.device.description : "none")
+            if (mediaStatus !== MediaPlayer.LoadedMedia && mediaStatus !== MediaPlayer.BufferedMedia) {
+                return
+            }
+            if (player.loggedFor == root.source) {
+                return
+            }
+            player.loggedFor = root.source
 
-                // Which audio streams the file carries, and how each one is
-                // encoded. A stream the build has no decoder for behaves the
-                // same as a file with no sound in it, so the codec name is
-                // the piece that tells the two apart.
-                const tracks = player.audioTracks
-                console.warn("media: audio tracks:", tracks.length,
-                             "| active track index:", player.activeAudioTrack)
-                for (let i = 0; i < tracks.length; ++i) {
-                    console.warn("media:   track", i,
-                                 "codec:", tracks[i].stringValue(MediaMetaData.AudioCodec),
-                                 "language:", tracks[i].stringValue(MediaMetaData.Language))
-                }
+            console.info("media:", root.source,
+                         "| audio:", player.hasAudio ? "yes" : "no",
+                         "| video:", player.hasVideo ? "yes" : "no",
+                         "| duration:", player.duration, "ms",
+                         "| device:", audio.device ? audio.device.description : "none")
+
+            // Which audio streams the file carries, and how each one is
+            // encoded. A stream the build has no decoder for behaves the same
+            // as a file with no sound in it, so the codec name is the piece
+            // that tells the two apart.
+            const tracks = player.audioTracks
+            console.log("media: audio tracks:", tracks.length,
+                        "| active track index:", player.activeAudioTrack,
+                        "| volume:", audio.volume, "| muted:", audio.muted)
+            for (let i = 0; i < tracks.length; ++i) {
+                console.log("media:   track", i,
+                            "codec:", tracks[i].stringValue(MediaMetaData.AudioCodec),
+                            "language:", tracks[i].stringValue(MediaMetaData.Language))
             }
         }
     }
@@ -117,12 +143,12 @@ Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
             color: "#000000"
-            radius: Theme.radiusSmall
+            radius: root.controlsHidden ? 0 : Theme.radiusSmall
 
             VideoOutput {
                 id: videoSurface
                 anchors.fill: parent
-                anchors.margins: 2
+                anchors.margins: root.controlsHidden ? 0 : 2
                 visible: root.isVideo
                 fillMode: VideoOutput.PreserveAspectFit
             }
@@ -192,7 +218,13 @@ Item {
             MouseArea {
                 anchors.fill: parent
                 acceptedButtons: Qt.LeftButton
-                onClicked: root.togglePlay()
+                // No pointer over a full-screen picture once the controls have
+                // gone; it comes back with them.
+                cursorShape: root.controlsHidden ? Qt.BlankCursor : Qt.ArrowCursor
+                onClicked: {
+                    root.interacted()
+                    root.togglePlay()
+                }
 
                 // A double click is a first click that already paused, plus
                 // this. Playing state is put back so the pair of clicks only
@@ -200,11 +232,13 @@ Item {
                 // arrives here instead of as another plain click, so this runs
                 // once and not twice.
                 onDoubleClicked: {
+                    root.interacted()
                     root.togglePlay()
                     root.fullScreenToggleRequested()
                 }
 
                 onWheel: (wheel) => {
+                    root.interacted()
                     // One notch of an ordinary mouse wheel is 120 units, so
                     // this is a 5% step per notch, and a trackpad's smaller
                     // movements scale down with it.
@@ -217,6 +251,7 @@ Item {
         RowLayout {
             Layout.fillWidth: true
             spacing: 8
+            visible: !root.controlsHidden
 
             Text {
                 text: root.formatTime(player.position)
@@ -293,6 +328,7 @@ Item {
         RowLayout {
             Layout.fillWidth: true
             spacing: 10
+            visible: !root.controlsHidden
 
             Rectangle {
                 id: playButton

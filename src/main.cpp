@@ -155,12 +155,20 @@ void installLogging()
     // all replaces the defaults, so without naming it here a developer's
     // console.log vanishes from the log while console.warn still arrives -
     // warnings are not debug level, so they were never filtered.
+    // The qt.multimedia rules quiet the FFmpeg backend: it lists its hardware
+    // decoders at info level on first use, and warns when a stream header has
+    // no duration even though it then reads one from the container. Neither is
+    // about this application; real playback failures still arrive through
+    // MediaPlayer.errorOccurred, which the player logs and shows on screen.
 #ifdef QT_DEBUG
     constexpr const char *kDefaultRules = "qmlcommander.*.debug=true\n"
-                                          "qml.debug=true";
+                                          "qml.debug=true\n"
+                                          "qt.multimedia.ffmpeg.mediadataholder.warning=false";
 #else
     constexpr const char *kDefaultRules = "qmlcommander.*.debug=false\n"
-                                          "qml.debug=false";
+                                          "qml.debug=false\n"
+                                          "qt.multimedia.ffmpeg.info=false\n"
+                                          "qt.multimedia.ffmpeg.mediadataholder.warning=false";
 #endif
     QLoggingCategory::setFilterRules(QString::fromLatin1(kDefaultRules));
 

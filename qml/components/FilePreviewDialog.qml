@@ -20,6 +20,16 @@ Rectangle {
     /// the way the user had it rather than always dropping it to a plain
     /// window when it had been maximised.
     property int visibilityBeforeExpand: Window.Windowed
+    /// Full-screen video with nothing else on screen. After ten seconds
+    /// without mouse or keyboard input the header, the footer and the player's
+    /// controls disappear and the picture takes the whole screen, as video
+    /// players do. Any movement or key press brings them back.
+    property bool immersive: false
+    /// Only full-screen video hides its controls; audio has nothing to look at
+    /// without them, and a windowed preview keeps its frame.
+    readonly property bool canGoImmersive: isOpen && expanded
+                                           && !!(fileData && fileData.isVideo)
+                                           && mediaLoader.item !== null
     property bool isEditMode: false
     property string saveError: ""
     property string saveNotice: ""
@@ -32,6 +42,51 @@ Rectangle {
     // this item holds focus. Without this it depends on whatever happened to
     // have focus when the dialog opened.
     focus: isOpen
+
+    Timer {
+        id: idleTimer
+        interval: 10000
+        onTriggered: {
+            if (root.canGoImmersive) {
+                root.immersive = true
+            }
+        }
+    }
+
+    /// Called on every mouse movement, key press, click and wheel turn while
+    /// the dialog is open: shows the controls again and starts the ten seconds
+    /// over. When the conditions for hiding are not met the timer is simply
+    /// left stopped.
+    function userActive() {
+        immersive = false
+        if (canGoImmersive) {
+            idleTimer.restart()
+        } else {
+            idleTimer.stop()
+        }
+    }
+    onCanGoImmersiveChanged: userActive()
+
+    // Mouse movement anywhere over the dialog. A handler rather than a
+    // MouseArea so it takes nothing away from the areas that already handle
+    // clicks: hover is delivered to every handler under the pointer.
+    HoverHandler {
+        // pointChanged is not "the mouse moved". Qt Quick re-sends a hover
+        // event to whatever is under the pointer whenever the scene is redrawn,
+        // in case an item moved under a still pointer, and a playing video
+        // redraws many times a second. Left as it was, that alone restarted the
+        // timer on every frame and the controls never hid. So the position is
+        // compared and only a real change counts.
+        property point lastPosition: Qt.point(-1, -1)
+        onPointChanged: {
+            const p = point.scenePosition
+            if (p.x === lastPosition.x && p.y === lastPosition.y) {
+                return
+            }
+            lastPosition = p
+            root.userActive()
+        }
+    }
 
     signal closed()
 
@@ -211,19 +266,22 @@ Rectangle {
         height: root.expanded ? parent.height : Math.min(parent.height - 60, 680)
         anchors.centerIn: parent
         radius: root.expanded ? 0 : Theme.radiusLarge
-        color: Theme.bgDialog
+        // Immersive: black to the edges, so the letterbox bars around the
+        // picture are the same colour as the picture's own background.
+        color: root.immersive ? "#000000" : Theme.bgDialog
         border.color: Theme.borderActive
-        border.width: 1
+        border.width: root.immersive ? 0 : 1
 
         ColumnLayout {
             anchors.fill: parent
-            anchors.margins: 16
-            spacing: 10
+            anchors.margins: root.immersive ? 0 : 16
+            spacing: root.immersive ? 0 : 10
 
             // Header
             RowLayout {
                 Layout.fillWidth: true
                 spacing: 8
+                visible: !root.immersive
 
                 Text {
                     text: root.isEditMode ? "✏️ Edit File" : "👁 Quick View"
@@ -333,6 +391,7 @@ Rectangle {
                 Layout.fillWidth: true
                 height: 1
                 color: Theme.borderSubtle
+                visible: !root.immersive
             }
 
             // Main Content Area
@@ -443,14 +502,30 @@ Rectangle {
                     }
                 }
 
+                // The player hides its own rows when the dialog goes immersive.
+                // A Binding element rather than a line in onLoaded, because
+                // onLoaded runs once and this has to follow every change.
+                Binding {
+                    target: mediaLoader.item
+                    property: "controlsHidden"
+                    value: root.immersive
+                    when: mediaLoader.item !== null
+                }
+
                 // The player only exists once a media file is opened, so its
-                // signal is connected here rather than on the component itself.
-                // A null target is allowed and simply connects nothing, which
-                // is the case for every other kind of file.
+                // signals are connected here rather than on the component
+                // itself. A null target is allowed and simply connects nothing,
+                // which is the case for every other kind of file.
                 Connections {
                     target: mediaLoader.item
                     function onFullScreenToggleRequested() {
                         root.setExpanded(!root.expanded)
+                    }
+                    // A click or a wheel turn on the picture is user activity
+                    // that the hover handler does not see: the pointer did not
+                    // move.
+                    function onInteracted() {
+                        root.userActive()
                     }
                 }
 
@@ -591,6 +666,7 @@ Rectangle {
             RowLayout {
                 Layout.fillWidth: true
                 spacing: 8
+                visible: !root.immersive
 
                 Text {
                     text: root.filePath
@@ -715,6 +791,9 @@ Rectangle {
     // list behind this dialog. The TextArea handles Enter itself in edit mode,
     // so newlines still work there.
     Keys.onPressed: (event) => {
+        // Any key at all shows the controls again in full-screen video, before
+        // the key does whatever else it does.
+        root.userActive()
         // Tab is handled here rather than in a Keys.onTabPressed because this
         // item has a blanket accept at the end. Specific handlers do run first
         // - Keys.onPressed only sees what they leave - but there was no Tab
