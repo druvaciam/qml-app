@@ -90,163 +90,177 @@ FocusScope {
                 onRequestDropCopy: (paths, destination, isMove) => root.requestDropCopy(paths, destination, isMove)
             }
 
-            // Quick Filter Bar
-            Rectangle {
+            // Quick Filter Bar: the text box and, beside it, the Hidden toggle.
+            // The toggle used to sit inside the box's border, which lit up in
+            // the accent colour with the field's focus and made the toggle look
+            // like part of the text input.
+            RowLayout {
                 Layout.fillWidth: true
-                height: 28
-                color: filterInput.activeFocus ? Theme.bgInput : Theme.bgHeader
-                border.color: filterInput.activeFocus ? Theme.accent : Theme.borderSubtle
-                border.width: 1
-                radius: Theme.radiusSmall
+                Layout.preferredHeight: 28
+                // A layout nested in a layout fills its parent's spare height
+                // by default; a plain Rectangle did not. Left on, this row and
+                // the file list split the panel between them.
+                Layout.fillHeight: false
+                spacing: 6
 
-                RowLayout {
-                    anchors.fill: parent
-                    anchors.leftMargin: 6
-                    anchors.rightMargin: 6
-                    spacing: 6
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    color: filterInput.activeFocus ? Theme.bgInput : Theme.bgHeader
+                    border.color: filterInput.activeFocus ? Theme.accent : Theme.borderSubtle
+                    border.width: 1
+                    radius: Theme.radiusSmall
 
-                    Text {
-                        text: "🔍"
-                        font.pixelSize: 11
-                    }
-
-                    TextField {
-                        id: filterInput
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        placeholderText: "Filter files (*.cpp, name...)"
-                        placeholderTextColor: Theme.textMuted
-                        font.family: Theme.fontFamily
-                        font.pixelSize: Theme.fontSizeSmall
-                        color: Theme.textPrimary
-                        background: null
-                        verticalAlignment: TextInput.AlignVCenter
-                        selectByMouse: true
-
-                        // Deliberately NOT `text: root.controller.filterText`.
-                        //
-                        // That is a two-way binding: the field writes the
-                        // controller, the controller writes back into the field.
-                        // Re-assigning `text` on a TextInput resets its cursor and
-                        // selection, so every character typed came back as an
-                        // assignment that disturbed the field under the caret.
-                        // The Connections block below pushes the value one way
-                        // only, and never while it already matches.
-                        Connections {
-                            target: root.controller
-                            function onFilterTextChanged(filter) {
-                                if (filterInput.text !== filter) {
-                                    filterInput.text = filter
-                                }
-                            }
-                        }
-
-                        // Applying the filter re-reads the whole directory. Doing
-                        // that per keystroke means eight reloads to type eight
-                        // characters, each one rebuilding every row.
-                        Timer {
-                            id: filterDebounce
-                            interval: 250
-                            repeat: false
-                            onTriggered: root.controller.filterText = filterInput.text
-                        }
-
-                        onTextEdited: filterDebounce.restart()
-
-                        onActiveFocusChanged: {
-                            if (activeFocus) {
-                                root.controller.activate()
-                            }
-                        }
-
-                        Keys.onEscapePressed: {
-                            filterDebounce.stop()
-                            // Typing breaks the binding on `text`, so clearing the
-                            // controller alone would leave the old text on screen.
-                            filterInput.text = ""
-                            root.controller.filterText = ""
-                            fileListView.setFocus()
-                        }
-
-                        Keys.onReturnPressed: {
-                            // Don't wait out the debounce when the user is done.
-                            filterDebounce.stop()
-                            root.controller.filterText = filterInput.text
-                            fileListView.setFocus()
-                        }
-
-                        Keys.onDownPressed: {
-                            fileListView.setFocus()
-                        }
-                    }
-
-                    // Clear filter button
-                    Rectangle {
-                        width: 18
-                        height: 18
-                        radius: 9
-                        color: clearFilterMouse.containsMouse ? Theme.bgHover : "transparent"
-                        visible: filterInput.text.length > 0
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 6
+                        anchors.rightMargin: 6
+                        spacing: 6
 
                         Text {
-                            anchors.centerIn: parent
-                            text: "✕"
-                            font.pixelSize: 10
-                            color: Theme.textSecondary
+                            text: "🔍"
+                            font.pixelSize: 11
                         }
 
-                        MouseArea {
-                            id: clearFilterMouse
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: {
+                        TextField {
+                            id: filterInput
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            placeholderText: "Filter files (*.cpp, name...)"
+                            placeholderTextColor: Theme.textMuted
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.fontSizeSmall
+                            color: Theme.textPrimary
+                            background: null
+                            verticalAlignment: TextInput.AlignVCenter
+                            selectByMouse: true
+
+                            // Deliberately NOT `text: root.controller.filterText`.
+                            //
+                            // That is a two-way binding: the field writes the
+                            // controller, the controller writes back into the field.
+                            // Re-assigning `text` on a TextInput resets its cursor and
+                            // selection, so every character typed came back as an
+                            // assignment that disturbed the field under the caret.
+                            // The Connections block below pushes the value one way
+                            // only, and never while it already matches.
+                            Connections {
+                                target: root.controller
+                                function onFilterTextChanged(filter) {
+                                    if (filterInput.text !== filter) {
+                                        filterInput.text = filter
+                                    }
+                                }
+                            }
+
+                            // Applying the filter re-reads the whole directory. Doing
+                            // that per keystroke means eight reloads to type eight
+                            // characters, each one rebuilding every row.
+                            Timer {
+                                id: filterDebounce
+                                interval: 250
+                                repeat: false
+                                onTriggered: root.controller.filterText = filterInput.text
+                            }
+
+                            onTextEdited: filterDebounce.restart()
+
+                            onActiveFocusChanged: {
+                                if (activeFocus) {
+                                    root.controller.activate()
+                                }
+                            }
+
+                            Keys.onEscapePressed: {
                                 filterDebounce.stop()
+                                // Typing breaks the binding on `text`, so clearing the
+                                // controller alone would leave the old text on screen.
                                 filterInput.text = ""
                                 root.controller.filterText = ""
                                 fileListView.setFocus()
                             }
+
+                            Keys.onReturnPressed: {
+                                // Don't wait out the debounce when the user is done.
+                                filterDebounce.stop()
+                                root.controller.filterText = filterInput.text
+                                fileListView.setFocus()
+                            }
+
+                            Keys.onDownPressed: {
+                                fileListView.setFocus()
+                            }
+                        }
+
+                        // Clear filter button
+                        Rectangle {
+                            Layout.preferredWidth: 18
+                            Layout.preferredHeight: 18
+                            radius: 9
+                            color: clearFilterMouse.containsMouse ? Theme.bgHover : "transparent"
+                            visible: filterInput.text.length > 0
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: "✕"
+                                font.pixelSize: 10
+                                color: Theme.textSecondary
+                            }
+
+                            MouseArea {
+                                id: clearFilterMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    filterDebounce.stop()
+                                    filterInput.text = ""
+                                    root.controller.filterText = ""
+                                    fileListView.setFocus()
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Hidden Files Toggle
+                Rectangle {
+                    Layout.preferredWidth: hiddenRow.implicitWidth + 14
+                    Layout.preferredHeight: 22
+                    Layout.alignment: Qt.AlignVCenter
+                    radius: Theme.radiusSmall
+                    color: root.controller.model.showHidden ? Theme.accent : (hiddenMouse.containsMouse ? Theme.bgHover : "transparent")
+                    border.color: root.controller.model.showHidden ? Theme.accent : Theme.borderSubtle
+                    border.width: 1
+
+                    Row {
+                        id: hiddenRow
+                        anchors.centerIn: parent
+                        spacing: 4
+
+                        Text {
+                            text: root.controller.model.showHidden ? "👁" : "👁‍🗨"
+                            font.pixelSize: 11
+                            color: root.controller.model.showHidden ? "#0f172a" : Theme.textSecondary
+                        }
+
+                        Text {
+                            text: "Hidden"
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.fontSizeSmall
+                            font.bold: root.controller.model.showHidden
+                            color: root.controller.model.showHidden ? "#0f172a" : Theme.textSecondary
                         }
                     }
 
-                    // Hidden Files Toggle
-                    Rectangle {
-                        width: hiddenRow.implicitWidth + 14
-                        height: 22
-                        radius: Theme.radiusSmall
-                        color: root.controller.model.showHidden ? Theme.accent : (hiddenMouse.containsMouse ? Theme.bgHover : "transparent")
-                        border.color: root.controller.model.showHidden ? Theme.accent : Theme.borderSubtle
-                        border.width: 1
-
-                        Row {
-                            id: hiddenRow
-                            anchors.centerIn: parent
-                            spacing: 4
-
-                            Text {
-                                text: root.controller.model.showHidden ? "👁" : "👁‍🗨"
-                                font.pixelSize: 11
-                                color: root.controller.model.showHidden ? "#0f172a" : Theme.textSecondary
-                            }
-
-                            Text {
-                                text: "Hidden"
-                                font.family: Theme.fontFamily
-                                font.pixelSize: Theme.fontSizeSmall
-                                font.bold: root.controller.model.showHidden
-                                color: root.controller.model.showHidden ? "#0f172a" : Theme.textSecondary
-                            }
-                        }
-
-                        MouseArea {
-                            id: hiddenMouse
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: root.controller.toggleShowHidden()
-                            ToolTip.visible: containsMouse
-                            ToolTip.text: root.controller.model.showHidden ? "Hide hidden/system files (Ctrl+H)" : "Show hidden/system files (Ctrl+H)"
-                        }
+                    MouseArea {
+                        id: hiddenMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.controller.toggleShowHidden()
+                        ToolTip.visible: containsMouse
+                        ToolTip.text: root.controller.model.showHidden ? "Hide hidden/system files (Ctrl+H)" : "Show hidden/system files (Ctrl+H)"
                     }
                 }
             }

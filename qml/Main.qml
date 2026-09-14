@@ -11,7 +11,13 @@ ApplicationWindow {
     minimumWidth: 850
     minimumHeight: 520
     visible: true
-    flags: Qt.Window | Qt.FramelessWindowHint
+    // Frameless, because the title bar is drawn in QML. The three hints add no
+    // visible frame; they set the Windows style bits (WS_MINIMIZEBOX and
+    // friends) that the taskbar checks before it will minimise a window on a
+    // click of its button. Without them the click only brought the window to
+    // the front.
+    flags: Qt.Window | Qt.FramelessWindowHint | Qt.WindowSystemMenuHint
+           | Qt.WindowMinimizeButtonHint | Qt.WindowMaximizeButtonHint
     title: "QML Commander - Dual-Pane File Manager"
     color: Theme.bgApp
 
