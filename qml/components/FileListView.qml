@@ -141,9 +141,8 @@ FocusScope {
         return ""
     }
 
-    // One long-press timer and one rename timer for the whole view. Previously
-    // each of the three empty-area handlers carried its own copy, and every row
-    // delegate built two more, so a 40-row list created 80 Timer objects.
+    // One long-press timer and one rename timer for the whole view, shared by
+    // the empty-area handlers and every row.
     Timer {
         id: longPressTimer
         interval: 400
@@ -176,9 +175,8 @@ FocusScope {
         longPressTimer.start()
     }
 
-    // Keeps a right-drag selection moving while the pointer is held outside the
-    // list. onPositionChanged only fires when the mouse actually moves, so
-    // holding it below the last row used to stop the selection dead.
+    // Keeps a right-drag selection moving while the pointer is held still
+    // outside the list; onPositionChanged only fires when the mouse moves.
     Timer {
         id: dragScrollTimer
         interval: 50
@@ -560,9 +558,6 @@ FocusScope {
             }
             clearDragHover()
 
-            // The guards these lines used to carry - typeof appCtrl !==
-            // "undefined" - were there because the name came from another
-            // file and might not resolve. A required property always does.
             let paths = []
             if (drop.hasUrls) {
                 paths = rootListView.appController.urlsToPaths(drop.urls)
@@ -609,14 +604,9 @@ FocusScope {
     }
 
     // Every right-button interaction lives here, at the view level, NOT in the
-    // row delegate.
-    //
-    // A delegate is destroyed the instant its row scrolls out of view. The
-    // right-drag used to run from the delegate the drag started on, so extending
-    // the selection scrolled the list, which recycled that row, which destroyed
-    // the MouseArea and killed the mouse grab. The drag therefore died the moment
-    // the starting row left the screen - "scrolls a little then stops". This area
-    // is a child of the view and survives any amount of scrolling.
+    // row delegate: a delegate is destroyed the instant its row scrolls out of
+    // view, and a drag that scrolls the list would lose its MouseArea, and with
+    // it the mouse grab. This area is a child of the view and survives scrolling.
     MouseArea {
         id: rightArea
         anchors.top: headerRow.bottom
@@ -726,9 +716,8 @@ FocusScope {
         anchors.right: parent.right
         clip: true
         model: rootListView.controller.model
-        // Correct now that FilePanel is a FocusScope: this applies within its own
-        // panel only, so the two panels no longer compete. A binding here would
-        // not survive - forceActiveFocus() assigns to `focus` and breaks it.
+        // Within its own panel only, since FilePanel is a FocusScope. Not a
+        // binding: forceActiveFocus() assigns to `focus` and would break it.
         focus: true
 
         boundsBehavior: Flickable.StopAtBounds

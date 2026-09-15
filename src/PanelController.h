@@ -174,9 +174,8 @@ signals:
     void currentIndexChanged(int index);
     void isActiveChanged(bool active);
     void filterTextChanged(const QString &filter);
-    /// A navigation that could not happen. Typing a path that does not exist
-    /// used to close the editor and leave you where you were, with nothing to
-    /// tell a typo apart from a folder that simply looks similar.
+    /// A navigation that could not happen, with the reason, so a typo can be
+    /// told apart from a folder that merely looks similar.
     void navigationError(const QString &message);
     /// A file was activated and should be opened by the system.
     void fileOpenRequested(const QString &filePath);

@@ -76,6 +76,10 @@ class Theme : public QObject
 public:
     explicit Theme(QObject *parent = nullptr) : QObject(parent) {}
 
+    // One line per colour, on purpose: this is a table, and a table reads
+    // better as rows. clang-format cannot keep two statements on one line,
+    // so it is told to leave this block alone.
+    // clang-format off
     // Backgrounds
     QColor bgApp() const { static const QColor c(QStringLiteral("#121418")); return c; }
     QColor bgPanel() const { static const QColor c(QStringLiteral("#1a1d24")); return c; }
@@ -119,6 +123,7 @@ public:
     QColor fileDoc() const { static const QColor c(QStringLiteral("#60a5fa")); return c; }
     QColor fileParent() const { static const QColor c(QStringLiteral("#e2e8f0")); return c; }
     QColor fileGeneric() const { static const QColor c(QStringLiteral("#9ca3af")); return c; }
+    // clang-format on
 
     // Typography
     QString fontFamily() const { return QStringLiteral("Segoe UI, -apple-system, BlinkMacSystemFont, Roboto, sans-serif"); }

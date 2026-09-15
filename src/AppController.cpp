@@ -38,7 +38,7 @@ public:
                     POINT pt;
                     GetCursorPos(&pt);
                     HMENU hMenu = CreatePopupMenu();
-                    InsertMenuW(hMenu, 0, MF_BYPOSITION | MF_STRING, 1, L"Open QML Commander");
+                    InsertMenuW(hMenu, 0, MF_BYPOSITION | MF_STRING, 1, L"Show App");
                     InsertMenuW(hMenu, 1, MF_BYPOSITION | MF_SEPARATOR, 0, nullptr);
                     InsertMenuW(hMenu, 2, MF_BYPOSITION | MF_STRING, 2, L"Exit");
 
@@ -114,9 +114,7 @@ AppController::AppController(QObject *parent)
     connect(m_fileOps, &FileOperationsService::operationCompleted,
             this, &AppController::onFileOperationCompleted);
 
-    // Nothing was listening to this, so every error it reported was swallowed -
-    // a New Folder that clashed with an existing name simply closed and did
-    // nothing visible.
+    // Operation errors go to the message dialog.
     connect(m_fileOps, &FileOperationsService::operationError, this,
             [this](const QString &error) {
                 emit showMessageRequested(QStringLiteral("Operation Failed"), error);
@@ -364,10 +362,13 @@ void AppController::setupTrayIcon(QQuickWindow *window)
     nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
     nid.uCallbackMessage = WM_APP + 101;
 
-    // Load custom application icon directly from compiled executable resources
-    HICON hIcon = (HICON)LoadImageW(GetModuleHandle(nullptr), MAKEINTRESOURCEW(1), IMAGE_ICON, 16, 16, LR_DEFAULTCOLOR);
+    // By name: app_icon.rc declares the icon as IDI_ICON1, not as number 1.
+    // At the system's small-icon size, so it is right at any display scale.
+    const int iconSize = GetSystemMetrics(SM_CXSMICON);
+    HICON hIcon = static_cast<HICON>(LoadImageW(GetModuleHandle(nullptr), L"IDI_ICON1",
+                                                IMAGE_ICON, iconSize, iconSize, LR_DEFAULTCOLOR));
     if (!hIcon) {
-        hIcon = (HICON)LoadImageW(GetModuleHandle(nullptr), MAKEINTRESOURCEW(1), IMAGE_ICON, 32, 32, LR_DEFAULTCOLOR);
+        qCWarning(lcApp) << "tray: icon resource IDI_ICON1 not found in the executable";
     }
     nid.hIcon = hIcon;
     wcscpy_s(nid.szTip, L"QML Commander - Dual-Pane File Manager");

@@ -191,9 +191,6 @@ void FileListModel::setFilterPattern(const QString &pattern)
     if (m_filterPattern != pattern) {
         m_filterPattern = pattern;
         // The folder has not changed - only how much of it we are showing.
-        // This used to re-read the directory, so typing eight characters into
-        // the filter did eight full directory reads. At 14000 files that was
-        // roughly a quarter of a second of disk work per keystroke.
         rebuildVisibleItems(false);
         emit filterPatternChanged();
     }
@@ -235,9 +232,8 @@ bool FileListModel::belongsToCurrentFolder(const QString &path) const
 }
 
 /// One comparable form of a path, computed once and then compared as a plain
-/// string. The old comparison ran QDir::cleanPath over both sides on every
-/// single test, which is two allocations per comparison - fine in a loop of
-/// ten, ruinous in a loop of forty-seven million.
+/// string: QDir::cleanPath on every comparison is two allocations each, and
+/// the loop below runs millions of them.
 /// Path to the moment it was written. Shared by both panels: a file copied
 /// in one is just as new in the other, and the same folder can be open on
 /// both sides.
@@ -525,10 +521,7 @@ void FileListModel::refreshItem(const QString &filePath)
         item.permissions = formatPermissions(info);
 
         const QModelIndex idx = index(i, 0);
-        // IsRecentRole belongs in this list: the row's modification time just
-        // changed, so whether it counts as recently changed did too. Leaving it
-        // out redrew the new date next to the old colour - a file saved from
-        // the editor stayed uncoloured until something else rebuilt the row.
+        // IsRecentRole too: the modification time changed, so the colour may.
         emit dataChanged(idx, idx, {SizeRole, FormattedSizeRole, ModifiedRole,
                                     FormattedModifiedRole, PermissionsRole,
                                     IsRecentRole});
@@ -1042,8 +1035,7 @@ void FileListModel::storeInCache(const QString &path, const QList<FileItem> &ite
 
     // A folder that alone exceeds the whole budget cannot be cached: storing it
     // would evict everything else and then, still over budget, evict itself.
-    // One 200000-file folder emptied the cache of all eight others and gained
-    // nothing. It is skipped instead, and any stale copy of it is dropped.
+    // It is skipped instead, and any stale copy of it is dropped.
     if (items.size() > kCacheRowBudget) {
         qCDebug(lcCache).noquote() << "not caching" << path << "-" << items.size()
                                    << "rows exceeds the whole budget of" << kCacheRowBudget;
@@ -1385,15 +1377,9 @@ void FileListModel::scanDirectory(QPromise<QList<FileItem>> &promise,
                                << "batches (worker thread)";
 }
 
-/// Puts everything that has arrived so far on screen, sorted.
-///
-/// The first version of this appended each batch as it came, which is cheaper
-/// and was wrong: a directory is read back in name order, so the folders in it
-/// arrive spread through the files and sat among them until the load finished.
-/// A partial listing that is ordered differently from a finished one reads as a
-/// broken sort, not as progress.
-///
-/// So each update sorts what is in hand and rebuilds the rows. That costs a
+/// Puts everything that has arrived so far on screen, sorted. Sorted rather
+/// than appended: the disk returns entries in name order, so folders would
+/// otherwise sit among the files until the load finished. Each update is a
 /// model reset, which is why it is throttled rather than done per batch.
 void FileListModel::showPartialListing()
 {

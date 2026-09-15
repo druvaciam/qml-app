@@ -11,11 +11,9 @@ ApplicationWindow {
     minimumWidth: 850
     minimumHeight: 520
     visible: true
-    // Frameless, because the title bar is drawn in QML. The three hints add no
-    // visible frame; they set the Windows style bits (WS_MINIMIZEBOX and
-    // friends) that the taskbar checks before it will minimise a window on a
-    // click of its button. Without them the click only brought the window to
-    // the front.
+    // Frameless: the title bar is drawn in QML. The three hints add no frame;
+    // they set the style bits the Windows taskbar checks before it minimises
+    // a window when its button is clicked.
     flags: Qt.Window | Qt.FramelessWindowHint | Qt.WindowSystemMenuHint
            | Qt.WindowMinimizeButtonHint | Qt.WindowMaximizeButtonHint
     title: "QML Commander - Dual-Pane File Manager"
@@ -40,16 +38,9 @@ ApplicationWindow {
         appCtrl.restoreWindowGeometry(window)
         appCtrl.setupTrayIcon(window)
 
-        // The session remembers which pane was in use, and the left panel is
-        // the one that declares focus: true. Restoring a session that ended on
-        // the right therefore highlighted the right pane while the keyboard was
-        // still on the left, so the arrow keys moved the cursor the user was
-        // not looking at. Put the keyboard where the highlight is.
-        //
-        // Deferred rather than called here: at this point the panels have been
-        // created but the window has not finished settling, and forcing focus
-        // this early left it on neither panel, with the arrows and Tab both
-        // dead. Qt.callLater runs it once the current pass is over.
+        // Put the keyboard where the highlighted pane is: the session may end
+        // on the right while focus: true lives on the left. Deferred because
+        // the window has not settled yet; focusing now lands on neither panel.
         Qt.callLater(restoreActiveFocus)
     }
 

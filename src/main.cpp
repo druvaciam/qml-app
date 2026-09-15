@@ -19,8 +19,7 @@
 namespace {
 
 /// Debug and Release write to separate files, so a log is never a mixture of
-/// two builds - which is exactly the confusion that made a stale binary look
-/// like a live bug earlier in this project's history.
+/// two builds.
 constexpr const char *kBuildTag =
 #ifdef QT_DEBUG
     "debug";
@@ -190,10 +189,11 @@ int main(int argc, char *argv[])
 
     installLogging();
 
-    // Set application icon for Windows taskbar and window instances
-    QIcon appIcon(QStringLiteral(":/resources/app_icon.png"));
+    // Window icon. RESOURCES in qt_add_qml_module land under the module prefix,
+    // hence ":/QmlCommander/...", not ":/resources/...".
+    const QIcon appIcon(QStringLiteral(":/QmlCommander/resources/app_icon.png"));
     if (appIcon.isNull()) {
-        appIcon = QIcon(QStringLiteral("resources/app_icon.png"));
+        qCWarning(lcApp) << "application icon not found in resources";
     }
     app.setWindowIcon(appIcon);
 

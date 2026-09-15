@@ -71,12 +71,9 @@ Rectangle {
     // MouseArea so it takes nothing away from the areas that already handle
     // clicks: hover is delivered to every handler under the pointer.
     HoverHandler {
-        // pointChanged is not "the mouse moved". Qt Quick re-sends a hover
-        // event to whatever is under the pointer whenever the scene is redrawn,
-        // in case an item moved under a still pointer, and a playing video
-        // redraws many times a second. Left as it was, that alone restarted the
-        // timer on every frame and the controls never hid. So the position is
-        // compared and only a real change counts.
+        // pointChanged is not "the mouse moved": Qt Quick re-sends the hover
+        // on every redraw, and a video redraws many times a second. Only a
+        // real change of position counts.
         property point lastPosition: Qt.point(-1, -1)
         onPointChanged: {
             const p = point.scenePosition
@@ -121,10 +118,9 @@ Rectangle {
         root.forceActiveFocus()
         root.focus = true
 
-        // The caret goes into the text for viewing as well as editing. In view
-        // mode the editor is read-only, so nothing can be typed - but Page Up,
-        // Page Down and the arrows all need something focused to act on, and
-        // with focus left on the dialog root they did nothing at all.
+        // The caret goes into the text for viewing as well as editing: the
+        // editor is read-only in view mode, but Page Up, Page Down and the
+        // arrows need something focused to act on.
         if (root.fileData?.isText) {
             Qt.callLater(() => {
                 editorText.forceActiveFocus()

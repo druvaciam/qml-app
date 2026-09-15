@@ -72,4 +72,10 @@ RUN echo "=== Test 2: Testing X11 virtual display execution with xvfb-run ===" \
 COPY scripts/seed_testdata.sh /tmp/seed_testdata.sh
 RUN sh /tmp/seed_testdata.sh && rm -f /tmp/seed_testdata.sh
 
+# 7. A fingerprint of the sources this image was built from, written by
+#    scripts/build-linux.ps1 and read back by it to prove the build ran on
+#    the current tree. Last, so a change to it rebuilds only this layer.
+ARG SRC_HASH=unknown
+LABEL qmlcommander.src_hash=$SRC_HASH
+
 ENTRYPOINT ["/app/dist-linux/bin/appQmlCommander"]

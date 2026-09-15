@@ -1,0 +1,29 @@
+{
+    // No automatic reformatting in this workspace. Twice now a save has
+    // rewritten a whole source file in LLVM defaults (2-space indent, braces
+    // moved, includes re-sorted) - AppController.h on Sep 5, AppController.cpp
+    // on Sep 15. Explicit "Format Document" still works and now follows the
+    // project's .clang-format, so it produces a small diff, not a rewrite.
+    "editor.formatOnSave": false,
+    "editor.formatOnType": false,
+    "editor.formatOnPaste": false,
+    "[cpp]": {
+        "editor.formatOnSave": false,
+        "editor.formatOnType": false,
+        "editor.formatOnPaste": false,
+        "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd"
+    },
+    "[c]": {
+        "editor.formatOnSave": false,
+        "editor.formatOnType": false,
+        "editor.formatOnPaste": false
+    },
+    "[qml]": {
+        "editor.formatOnSave": false,
+        "editor.formatOnType": false,
+        "editor.formatOnPaste": false
+    },
+    // The C/C++ extension has its own formatter that ignores .clang-format
+    // unless told; clangd reads it by default. Keep one formatter.
+    "C_Cpp.formatting": "disabled"
+}

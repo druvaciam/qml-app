@@ -3,7 +3,15 @@
 # 1. Inside IDE:
 Press `Ctrl + F5` (Run Without Debugging) or `F5` (Debug) -> automatically builds with Ninja and launches the app!
 
-# 2. Command Line:
+# 2. Command Line, everything at once (PowerShell):
+.\scripts\build-all.ps1          # both Windows trees + both dist folders + Docker image + Linux tarball
+.\scripts\build-windows.ps1      # Windows only: build-release, build-debug, dist-windows, dist-windows-debug
+.\scripts\build-linux.ps1        # Linux only: docker image qmlcommander-linux:latest, dist-linux/, QmlCommander-Linux-x64.tar.gz
+Each step verifies its output by content (hash of the exe in the build tree = hash in dist; a sources
+fingerprint label in the image; sha256 of the Linux binary in the image = on the host) and fails otherwise.
+Flags: -Clean (Windows, reconfigure from scratch), -NoCache (Docker), -Configuration Release|Debug, -SkipDeploy.
+
+# 3. Command Line, one tree by hand:
 cmake -B build -G Ninja
 ninja -C build
 build\appQmlCommander.exe

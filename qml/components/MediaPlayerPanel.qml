@@ -88,21 +88,14 @@ Item {
             console.warn("media: cannot play", root.source, "-", errorString)
         }
 
-        // The file this has already been logged for. The status passes
-        // through LoadedMedia and then BufferedMedia, and logging on both
-        // wrote every line twice.
+        // The file already logged: the status passes LoadedMedia and then
+        // BufferedMedia, and this must run once per file.
         property url loggedFor: ""
 
         // Once the file is opened its tracks are known. Logged because "there
-        // is no sound" has several causes that look identical on screen: a file
-        // with no audio track at all, a track the decoder cannot handle, and an
-        // output device that is not playing.
-        //
-        // One line at info level, so a normal run shows one line per file
-        // opened - the same weight as a folder navigation. The per-track
-        // detail is debug level and appears only in a debug build; it was at
-        // warning level while the silence report was being chased, which made
-        // every video preview look like six things had gone wrong.
+        // is no sound" has several causes that look identical on screen: no
+        // audio track, a codec the build cannot decode, a silent output device.
+        // One info line per file; per-track detail at debug level only.
         onMediaStatusChanged: {
             if (mediaStatus !== MediaPlayer.LoadedMedia && mediaStatus !== MediaPlayer.BufferedMedia) {
                 return
@@ -263,13 +256,9 @@ Item {
             Slider {
                 id: seekBar
                 objectName: "seekBar"
-                // Clicking a control normally gives it the keyboard, and a
-                // Slider uses the arrow keys itself. That made a single click
-                // on either bar swallow the arrows from then on: the preview
-                // window never saw them again, so seeking and volume stopped
-                // working and nothing brought them back. Neither bar needs the
-                // keyboard - the arrow keys already drive both - so neither
-                // takes it.
+                // A focused Slider takes the arrow keys for itself, and the
+                // preview window already drives both bars with them. So
+                // neither bar takes the keyboard.
                 focusPolicy: Qt.NoFocus
                 Layout.fillWidth: true
                 from: 0

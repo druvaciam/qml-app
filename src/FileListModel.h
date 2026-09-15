@@ -158,12 +158,9 @@ public:
     Q_INVOKABLE void refreshItem(const QString &filePath);
 
     /// Applies a change the app already knows about, without going back to the
-    /// disk for the other 13999 files. Deleting one file out of 14000 used to
-    /// cost a full rescan - the delete itself took 0 ms and the refresh after
-    /// it took 189 ms, all of it re-reading rows we already had.
-    ///
-    /// Paths outside this folder are ignored, so both panels can be handed the
-    /// same list and each takes only what concerns it.
+    /// disk for the rest of the folder. Paths outside this folder are ignored,
+    /// so both panels can be handed the same list and each takes only what
+    /// concerns it.
     void applyKnownRemovals(const QStringList &paths);
     /// Stats exactly these paths and inserts, updates or drops their rows.
     void applyKnownChanges(const QStringList &paths);
@@ -253,10 +250,7 @@ private:
     /// Builds one row from one file. Shared by the full scan and the targeted
     /// updates so a row can never be described two different ways.
     static FileItem makeItem(const QFileInfo &info, bool selected);
-    /// Shows what has arrived so far of a folder still being read, in the
-    /// sorted order. Appending batches as they came off the disk was tried first
-    /// and was wrong: a directory listing comes back in name order, so
-    /// folders landed among the files instead of above them.
+    /// Shows what has arrived so far of a folder still being read, sorted.
     void showPartialListing();
     /// The sort order, as one predicate. sortInternal uses it to sort; the
     /// targeted insert uses it to find where a new row belongs.

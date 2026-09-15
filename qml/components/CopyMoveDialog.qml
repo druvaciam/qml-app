@@ -22,9 +22,7 @@ FocusScope {
     focus: true
 
     /// What Tab cycles through. Qt's own focus chain walks the entire scene,
-    /// and the panels behind a dialog are still visible items - so Tab used to
-    /// step straight out of the dialog and into the file list, which is not
-    /// what "modal" means to anyone.
+    /// panels behind the dialog included, so the dialog keeps its own ring.
     readonly property var focusRing: [targetInput, okButton, cancelButton]
 
     function stepFocus(delta) {

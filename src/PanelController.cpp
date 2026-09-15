@@ -552,9 +552,8 @@ bool PanelController::renameItem(const QString &oldPath, const QString &newName)
     const QString trimmed = newName.trimmed();
 
     if (m_fileOps) {
-        // Emits operationCompleted / operationError. AppController reloads the
-        // panels on the first and shows a message on the second, so a failed
-        // rename is no longer silent.
+        // Emits operationCompleted / operationError; AppController reloads the
+        // panels on the first and shows a message on the second.
         if (!m_fileOps->renameItem(oldPath, trimmed)) {
             return false;
         }

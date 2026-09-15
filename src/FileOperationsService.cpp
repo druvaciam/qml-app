@@ -900,9 +900,8 @@ void FileOperationsService::copyItems(const QStringList &sourcePaths, const QStr
     if (!checkNotIntoOwnSubfolder(sourcePaths, destinationDir, QStringLiteral("copy"))) return;
 
     QStringList sources = sourcePaths;
-    // Every platform asks the same question, with the same wording and the same
-    // options. Windows used to fall through to the shell's own Replace-or-Skip
-    // dialog, which behaves differently and offers different choices.
+    // Every platform asks the same question, with the same wording and options,
+    // rather than the shell's own Replace-or-Skip dialog.
     if (!resolveConflicts(sources, destinationDir, false, policy)) return;
 
     m_lastSourcePaths = sources;
@@ -1078,9 +1077,7 @@ void FileOperationsService::deleteItems(const QStringList &paths, bool permanent
             updateProgress(info.fileName(), processed, total);
 
             // Every failure records why, and the first one wins - it is the one
-            // the user can act on. Previously only deleteRecursively wrote here,
-            // so a plain file that would not go left no reason at all and the
-            // report fell back to a generic sentence naming nothing.
+            // the user can act on.
             auto noteFailure = [&err](const QString &reason) {
                 if (err.isEmpty()) err = reason;
             };

@@ -1,0 +1,61 @@
+# The style this code is already written in, so that a formatter - the
+# editor's on-save hook, Qt Creator, clangd, an AI agent - reproduces what is
+# here instead of rewriting every file in LLVM defaults (2-space indent,
+# braces moved, includes re-sorted). Derived from Qt's own _clang-format.
+---
+Language: Cpp
+BasedOnStyle: WebKit
+Standard: c++20
+
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ColumnLimit: 0            # existing lines run past 100; do not rewrap them
+AccessModifierOffset: -4
+
+# Braces: on their own line for classes, functions and namespaces; on the
+# same line for if/for/while/switch.
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterClass: true
+  AfterFunction: true
+  AfterNamespace: false
+  AfterStruct: true
+  AfterEnum: true
+  AfterControlStatement: Never
+  BeforeElse: false
+  BeforeCatch: false
+  SplitEmptyFunction: false
+
+# Constructor initialisers: `    : first(),` then the rest aligned under it.
+BreakConstructorInitializers: BeforeColon
+ConstructorInitializerIndentWidth: 4
+PackConstructorInitializers: NextLine
+
+# Never re-order the includes; the order in the files is deliberate.
+SortIncludes: Never
+
+AlignAfterOpenBracket: Align
+AllowShortFunctionsOnASingleLine: All
+AllowShortIfStatementsOnASingleLine: AllIfsAndElse
+AllowShortLoopsOnASingleLine: false
+AllowShortEnumsOnASingleLine: true
+AllowShortBlocksOnASingleLine: Empty
+SpaceInEmptyBlock: false
+AlwaysBreakTemplateDeclarations: Yes
+PointerAlignment: Right
+SpaceBeforeParens: ControlStatements
+NamespaceIndentation: None
+IndentCaseLabels: false
+KeepEmptyLinesAtTheStartOfBlocks: false
+MaxEmptyLinesToKeep: 1
+ReflowComments: false
+FixNamespaceComments: true
+
+Cpp11BracedListStyle: true
+AlignTrailingComments:
+  Kind: Leave
+SpacesInContainerLiterals: false
+AllowShortCaseLabelsOnASingleLine: true
+SpaceBeforeCpp11BracedList: false
+BreakBeforeBinaryOperators: NonAssignment

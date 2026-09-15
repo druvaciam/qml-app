@@ -4,12 +4,10 @@ import QtQuick.Layouts
 import QmlCommander
 
 // A FocusScope, not a plain Rectangle. Both panels contain a file list that
-// declares `focus: true`; without a scope around each panel those two lists sit
-// in the same focus scope and compete for it. Whenever focus was re-resolved -
-// after a paste, which reloads both panels and destroys every delegate - the
-// later-declared one won, so the keyboard silently moved to the other pane.
-// A binding on `focus` cannot fix that, because forceActiveFocus() assigns to
-// `focus` directly and breaks the binding on the first mouse press.
+// declares `focus: true`; without a scope around each panel the two lists sit
+// in the same scope and compete for focus every time it is re-resolved. A
+// binding on `focus` cannot do this job: forceActiveFocus() assigns to `focus`
+// directly and would break the binding on the first mouse press.
 FocusScope {
     id: root
     required property PanelController controller
@@ -36,7 +34,7 @@ FocusScope {
     signal requestMove()
     signal requestDropCopy(var paths, string destination, bool isMove)
 
-    // The visual frame moved in here when the root became a FocusScope.
+    // The visual frame; the root is a FocusScope and draws nothing.
     Rectangle {
         id: frame
         anchors.fill: parent
@@ -72,9 +70,7 @@ FocusScope {
                 controller: root.controller
                 // Completes the focus chain. Both this and FilePanel are focus
                 // scopes, so active focus only reaches the list if every scope
-                // between the window and it claims focus. Without this the
-                // chain stopped at the panel and the arrow keys did nothing
-                // until something else - Tab, or a click - moved focus by hand.
+                // between the window and it claims focus.
                 focus: true
                 appController: root.appController
 
@@ -91,15 +87,10 @@ FocusScope {
             }
 
             // Quick Filter Bar: the text box and, beside it, the Hidden toggle.
-            // The toggle used to sit inside the box's border, which lit up in
-            // the accent colour with the field's focus and made the toggle look
-            // like part of the text input.
             RowLayout {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 28
-                // A layout nested in a layout fills its parent's spare height
-                // by default; a plain Rectangle did not. Left on, this row and
-                // the file list split the panel between them.
+                // A nested layout fills its parent's spare height by default.
                 Layout.fillHeight: false
                 spacing: 6
 
@@ -372,15 +363,10 @@ FocusScope {
             // which is why nothing appeared on screen.
             parent: fileListView
             anchors.fill: parent
-            // A binding, not something a signal handler switches on and off.
-            // Driving it from onIsLoadingChanged missed the one load that
-            // matters most - the first. The session's folder starts reading
-            // while AppController is being built, which is before this panel
-            // exists, so the change into "loading" had already happened before
-            // anything was listening and startup sat there in silence.
-            //
-            // count is 1 when only the ".." row is present, so this covers an
-            // empty list and never a refresh, which keeps its rows.
+            // A binding, not a signal handler: the session's folder starts
+            // reading before this panel exists, so the change into "loading"
+            // may already be over. count is 1 when only ".." is present, so
+            // this covers an empty list and never a refresh.
             visible: root.loadIsSlow
                      && root.controller.model.isLoading
                      && root.controller.model.count <= 1
