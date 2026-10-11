@@ -227,6 +227,13 @@ void PanelController::toggleShowHidden()
     }
 }
 
+void PanelController::toggleDeepSearch()
+{
+    if (m_model) {
+        m_model->toggleDeepSearch();
+    }
+}
+
 void PanelController::openItem(int index)
 {
     if (!m_model) return;

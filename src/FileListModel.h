@@ -29,6 +29,9 @@
 struct FileItem {
     QString name;
     QString fullPath;
+    /// Path from the folder the search started in, for a deep-search result.
+    /// Empty for an ordinary row, which is how the two are told apart.
+    QString relativePath;
     bool isDir = false;
     bool isParent = false;
     /// The name without its extension. Sorting compares this rather than the
@@ -64,6 +67,14 @@ class FileListModel : public QAbstractListModel
     /// like an empty folder.
     Q_PROPERTY(bool isLoading READ isLoading NOTIFY isLoadingChanged)
     Q_PROPERTY(QString filterPattern READ filterPattern WRITE setFilterPattern NOTIFY filterPatternChanged)
+    /// Deep search: the filter looks through every subfolder instead of only
+    /// this one. A mode, like showHidden - it stays on until turned off.
+    Q_PROPERTY(bool deepSearch READ deepSearch WRITE setDeepSearch NOTIFY deepSearchChanged)
+    /// True while deep results are what the panel is showing, which needs the
+    /// mode on and something typed in the filter.
+    Q_PROPERTY(bool deepSearchActive READ deepSearchActive NOTIFY deepSearchChanged)
+    /// True when the walk stopped at the result limit rather than at the end.
+    Q_PROPERTY(bool deepSearchTruncated READ deepSearchTruncated NOTIFY deepSearchChanged)
 
 public:
     enum FileRoles {
@@ -84,7 +95,10 @@ public:
         /// True for a row that has changed since the application started,
         /// or that one of its own copy, move or new-folder operations
         /// produced. Not stored on the row - worked out when asked.
-        IsRecentRole
+        IsRecentRole,
+        /// Where a deep-search result sits relative to the folder searched.
+        /// Empty for every ordinary row.
+        RelativePathRole
     };
     Q_ENUM(FileRoles)
 
@@ -144,6 +158,12 @@ public:
     /// folder being left behind purely to throw the result away, which is a
     /// visible stall in a large one.
     void clearFilterNoReload();
+
+    bool deepSearch() const { return m_deepSearch; }
+    bool deepSearchActive() const { return m_deepSearch && !m_filterPattern.trimmed().isEmpty(); }
+    bool deepSearchTruncated() const { return m_deepTruncated; }
+    Q_INVOKABLE void setDeepSearch(bool on);
+    Q_INVOKABLE void toggleDeepSearch();
 
     // QML Invokables for interaction
     Q_INVOKABLE void refresh();
@@ -213,6 +233,7 @@ signals:
     void showHiddenChanged();
     void isLoadingChanged();
     void filterPatternChanged();
+    void deepSearchChanged();
     void directoryLoadError(const QString &error);
     void beforeDirectoryReset(bool isNewPath);
     void directoryReset(bool isNewPath);
@@ -235,6 +256,9 @@ private:
     /// deliberately not compared: it belongs to the user, not to the disk.
     static bool listingsMatch(const QList<FileItem> &a, const QList<FileItem> &b);
     void sortInternal();
+    /// After one row's sort key changed: moves it to where the order puts it,
+    /// keeping the view's cursor and scroll position (a re-sort would not).
+    void moveRowToSortedPosition(int from);
     void updateSelectionStats();
     /// Reads a folder into a plain list. Runs on a worker thread, so it takes
     /// everything it needs as arguments and touches no member state; it is a
@@ -252,6 +276,20 @@ private:
     static FileItem makeItem(const QFileInfo &info, bool selected);
     /// Shows what has arrived so far of a folder still being read, sorted.
     void showPartialListing();
+    /// Walks path and everything under it on a worker thread, reporting the
+    /// entries whose name matches the filter. Same shape as scanDirectory:
+    /// static, argument-only, batched through the promise.
+    static void searchRecursive(QPromise<QList<FileItem>> &promise,
+                                const QString &root,
+                                const QString &filterText,
+                                bool includeHidden);
+    /// Starts a deep search for the current folder and filter, cancelling one
+    /// already running. Does nothing but cancel when the filter is empty.
+    void startDeepSearch();
+    /// Stops a running walk. The results it has already produced are kept;
+    /// what stops is the work and any further batches.
+    void cancelDeepSearch();
+    void showPartialSearch();
     /// The sort order, as one predicate. sortInternal uses it to sort; the
     /// targeted insert uses it to find where a new row belongs.
     bool itemLessThan(const FileItem &lhs, const FileItem &rhs) const;
@@ -301,6 +339,18 @@ private:
     /// fast folder is wasted work the user cannot even see.
     static constexpr int kPartialIntervalMs = 200;
     QElapsedTimer m_partialShown;
+
+    bool m_deepSearch = false;
+    /// What a deep search found. While deepSearchActive() these are the rows
+    /// the panel shows, in place of m_allItems.
+    QList<FileItem> m_deepItems;
+    QFutureWatcher<QList<FileItem>> *m_searchWatcher = nullptr;
+    QList<FileItem> m_searchIncoming;
+    QElapsedTimer m_searchPartialShown;
+    bool m_deepTruncated = false;
+    /// A whole drive can hold millions of matches, and a list that long helps
+    /// nobody. The walk stops here and says so.
+    static constexpr int kDeepSearchMax = 20000;
     bool m_pendingIsNewPath = false;
     bool m_isLoading = false;
     /// Whether the rows currently on screen came from the cache. If they did,

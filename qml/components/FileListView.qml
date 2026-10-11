@@ -1000,7 +1000,9 @@ FocusScope {
                     Text {
                         anchors.fill: parent
                         verticalAlignment: Text.AlignVCenter
-                        text: fileName
+                        // A deep-search result shows where it was found; every
+                        // ordinary row has an empty relativePath.
+                        text: relativePath !== "" ? relativePath : fileName
                         font.family: Theme.fontFamily
                         font.pixelSize: Theme.fontSizeBase
                         font.bold: isDir
@@ -1011,7 +1013,9 @@ FocusScope {
                         color: isSelected ? Theme.textSelected
                                           : (isRecent ? Theme.success
                                                       : (isDir ? Theme.fileFolder : Theme.textPrimary))
-                        elide: Text.ElideRight
+                        // A long result path is cut at the front: the file
+                        // name at the end is the part being looked for.
+                        elide: relativePath !== "" ? Text.ElideLeft : Text.ElideRight
                         visible: rootListView.editingIndex !== index
                     }
 

@@ -106,6 +106,7 @@ public:
     Q_INVOKABLE void selectItemByName(const QString &fileName);
     Q_INVOKABLE void refreshDrives();
     Q_INVOKABLE void toggleShowHidden();
+    Q_INVOKABLE void toggleDeepSearch();
 
     // --- Item Interactions ---
     /**

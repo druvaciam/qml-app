@@ -62,6 +62,7 @@ public:
   ~AppController() override;
 
   Q_INVOKABLE void toggleHiddenFiles();
+  Q_INVOKABLE void toggleDeepSearch();
 
   PanelController *leftPanel() const { return m_leftPanel; }
   PanelController *rightPanel() const { return m_rightPanel; }

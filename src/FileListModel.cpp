@@ -74,6 +74,8 @@ QVariant FileListModel::data(const QModelIndex &index, int role) const
         return item.isSelected;
     case IsRecentRole:
         return isRecent(item);
+    case RelativePathRole:
+        return item.relativePath;
     default:
         return QVariant();
     }
@@ -117,7 +119,8 @@ QHash<int, QByteArray> FileListModel::roleNames() const
         {FileTypeRole, "fileType"},
         {PermissionsRole, "permissions"},
         {IsSelectedRole, "isSelected"},
-        {IsRecentRole, "isRecent"}
+        {IsRecentRole, "isRecent"},
+        {RelativePathRole, "relativePath"}
     };
     return roles;
 }
@@ -174,9 +177,15 @@ void FileListModel::setShowHidden(bool show)
 {
     if (m_showHidden != show) {
         m_showHidden = show;
-        // Hidden entries are always read; whether they are shown is decided
-        // here, in memory. No reason to walk the folder again for a checkbox.
-        rebuildVisibleItems(false);
+        if (deepSearchActive()) {
+            // A deep walk skips hidden folders at the source rather than
+            // reading them to hide them, so this one does need walking again.
+            startDeepSearch();
+        } else {
+            // Hidden entries are always read; whether they are shown is decided
+            // here, in memory. No reason to walk the folder again for a checkbox.
+            rebuildVisibleItems(false);
+        }
         emit showHiddenChanged();
     }
 }
@@ -190,10 +199,110 @@ void FileListModel::setFilterPattern(const QString &pattern)
 {
     if (m_filterPattern != pattern) {
         m_filterPattern = pattern;
-        // The folder has not changed - only how much of it we are showing.
-        rebuildVisibleItems(false);
+        if (m_deepSearch) {
+            // In deep mode the filter decides what is read, not just what is
+            // shown, so it starts a walk rather than filtering what is here.
+            startDeepSearch();
+            // Typing into an empty filter, or clearing it, switches deep
+            // results on and off - deepSearchActive changed with it.
+            emit deepSearchChanged();
+        } else {
+            // The folder has not changed - only how much of it we are showing.
+            rebuildVisibleItems(false);
+        }
         emit filterPatternChanged();
     }
+}
+
+void FileListModel::setDeepSearch(bool on)
+{
+    if (m_deepSearch == on) {
+        return;
+    }
+    m_deepSearch = on;
+    if (deepSearchActive()) {
+        startDeepSearch();
+    } else {
+        cancelDeepSearch();
+        m_deepItems.clear();
+        m_deepTruncated = false;
+        rebuildVisibleItems(false);
+    }
+    emit deepSearchChanged();
+}
+
+void FileListModel::toggleDeepSearch()
+{
+    setDeepSearch(!m_deepSearch);
+}
+
+void FileListModel::cancelDeepSearch()
+{
+    if (m_searchWatcher) {
+        m_searchWatcher->cancel();
+        m_searchWatcher->setFuture(QFuture<QList<FileItem>>());
+    }
+    m_searchIncoming.clear();
+    if (m_isLoading && !m_loadWatcher) {
+        setLoading(false);
+    }
+}
+
+void FileListModel::startDeepSearch()
+{
+    cancelDeepSearch();
+    m_deepItems.clear();
+    m_deepTruncated = false;
+    m_searchPartialShown.invalidate();
+
+    if (!deepSearchActive() || m_currentPath.isEmpty()) {
+        rebuildVisibleItems(false);
+        setLoading(false);
+        return;
+    }
+
+    // Empty the list first: results arrive over seconds, and leaving the old
+    // folder's rows up meanwhile says the search found them.
+    rebuildVisibleItems(false);
+    setLoading(true);
+
+    if (!m_searchWatcher) {
+        m_searchWatcher = new QFutureWatcher<QList<FileItem>>(this);
+
+        connect(m_searchWatcher, &QFutureWatcher<QList<FileItem>>::resultReadyAt,
+                this, [this](int index) {
+            m_searchIncoming.append(m_searchWatcher->resultAt(index));
+            if (!m_searchPartialShown.isValid()
+                || m_searchPartialShown.elapsed() >= kPartialIntervalMs) {
+                showPartialSearch();
+                m_searchPartialShown.restart();
+            }
+        });
+
+        connect(m_searchWatcher, &QFutureWatcher<QList<FileItem>>::finished, this, [this]() {
+            if (m_searchWatcher->isCanceled()) {
+                return;
+            }
+            m_deepItems = m_searchIncoming;
+            m_deepTruncated = m_deepItems.size() >= kDeepSearchMax;
+            m_searchIncoming.clear();
+            rebuildVisibleItems(false, true, true);
+            setLoading(false);
+            qCInfo(lcModel).noquote() << "deep search" << m_filterPattern << "in" << m_currentPath
+                                      << "->" << m_deepItems.size() << "matches"
+                                      << (m_deepTruncated ? "(stopped at the limit)" : "");
+            emit deepSearchChanged();
+        });
+    }
+
+    m_searchWatcher->setFuture(QtConcurrent::run(&FileListModel::searchRecursive,
+                                                 m_currentPath, m_filterPattern, m_showHidden));
+}
+
+void FileListModel::showPartialSearch()
+{
+    m_deepItems = m_searchIncoming;
+    rebuildVisibleItems(false, true, true);
 }
 
 bool FileListModel::isCopyScratchFile(const QString &fileName)
@@ -205,7 +314,11 @@ void FileListModel::clearFilterNoReload()
 {
     if (!m_filterPattern.isEmpty()) {
         m_filterPattern.clear();
+        cancelDeepSearch();
+        m_deepItems.clear();
+        m_deepTruncated = false;
         emit filterPatternChanged();
+        emit deepSearchChanged();
     }
 }
 
@@ -529,14 +642,51 @@ void FileListModel::refreshItem(const QString &filePath)
         if (item.isSelected) {
             updateSelectionStats();
         }
+        // Date and size may be the sort key, so the row may belong elsewhere now.
+        moveRowToSortedPosition(i);
         return;
     }
+}
+
+/// Moves one row to where the current sort order puts it, assuming every other
+/// row is already in order. A move rather than a re-sort: the view keeps the
+/// cursor and the scroll position across a move, and loses both on a reset.
+void FileListModel::moveRowToSortedPosition(int from)
+{
+    const int start = (!m_items.isEmpty() && m_items.first().isParent) ? 1 : 0;
+    if (from < start || from >= static_cast<int>(m_items.size())) {
+        return;
+    }
+    const FileItem item = m_items[from];
+
+    // The first row, other than this one, that should come after it.
+    int dest = static_cast<int>(m_items.size());
+    for (int j = start; j < static_cast<int>(m_items.size()); ++j) {
+        if (j != from && !itemLessThan(m_items[j], item)) {
+            dest = j;
+            break;
+        }
+    }
+    // Already in place: beginMoveRows treats these two as no-ops.
+    if (dest == from || dest == from + 1) {
+        return;
+    }
+    if (!beginMoveRows(QModelIndex(), from, from, QModelIndex(), dest)) {
+        return;
+    }
+    m_items.move(from, dest > from ? dest - 1 : dest);
+    endMoveRows();
 }
 
 void FileListModel::refresh()
 {
     m_reloadTimer.stop();
     m_reloadPending = false;
+    // Deep results are a snapshot of a walk, not of this folder. Re-reading
+    // the folder underneath them would replace them with its own entries.
+    if (deepSearchActive()) {
+        return;
+    }
     loadDirectory();
 }
 
@@ -1120,6 +1270,10 @@ void FileListModel::loadDirectory()
 {
     const bool isNewPath = m_isNewPathNavigation;
 
+    cancelDeepSearch();
+    m_deepItems.clear();
+    m_deepTruncated = false;
+
     QSet<QString> keepSelected;
     if (!isNewPath) {
         for (const auto &it : m_allItems) {
@@ -1377,6 +1531,83 @@ void FileListModel::scanDirectory(QPromise<QList<FileItem>> &promise,
                                << "batches (worker thread)";
 }
 
+void FileListModel::searchRecursive(QPromise<QList<FileItem>> &promise,
+                                    const QString &root,
+                                    const QString &filterText,
+                                    bool includeHidden)
+{
+    const QList<QRegularExpression> patterns = compileFilter(filterText);
+    if (patterns.isEmpty() || root.isEmpty() || !QDir(root).exists()) {
+        promise.addResult(QList<FileItem>());
+        return;
+    }
+
+    QElapsedTimer walkTimer;
+    walkTimer.start();
+
+    // Hidden entries are skipped at the source here, unlike a plain folder
+    // read: walking into every .git and node_modules to throw the results away
+    // is most of the time a deep search takes.
+    QDir::Filters filters = QDir::AllEntries | QDir::NoDotAndDotDot | QDir::System;
+    if (includeHidden) {
+        filters |= QDir::Hidden;
+    }
+    // Symlinked directories are not followed, so a link pointing at a parent
+    // cannot send the walk round in circles.
+    QDirIterator it(root, filters, QDirIterator::Subdirectories);
+
+    const QDir base(root);
+    QList<FileItem> batch;
+    batch.reserve(kScanBatch);
+    int total = 0;
+    // Matches can be rare in a big tree, so a batch that is only sent when it
+    // is full would hold the first result back until the whole walk is done.
+    QElapsedTimer sinceFlush;
+    sinceFlush.start();
+
+    while (it.hasNext()) {
+        if (promise.isCanceled()) {
+            return;
+        }
+        it.next();
+        const QFileInfo info = it.fileInfo();
+
+        if (FileListModel::isCopyScratchFile(info.fileName())) {
+            continue;
+        }
+
+        bool matched = false;
+        for (const QRegularExpression &re : patterns) {
+            if (re.match(info.fileName()).hasMatch()) {
+                matched = true;
+                break;
+            }
+        }
+        if (!matched) {
+            continue;
+        }
+
+        FileItem item = makeItem(info, false);
+        item.relativePath = base.relativeFilePath(item.fullPath);
+        batch.append(item);
+        ++total;
+
+        if (batch.size() >= kScanBatch || sinceFlush.elapsed() >= kPartialIntervalMs) {
+            promise.addResult(batch);
+            batch.clear();
+            batch.reserve(kScanBatch);
+            sinceFlush.restart();
+        }
+        if (total >= kDeepSearchMax) {
+            break;
+        }
+    }
+
+    promise.addResult(batch);
+    qCDebug(lcModel).noquote() << "deep search" << filterText << "under" << root << "->" << total
+                               << "matches in" << walkTimer.elapsed() << "ms (worker thread)";
+}
+
 /// Puts everything that has arrived so far on screen, sorted. Sorted rather
 /// than appended: the disk returns entries in name order, so folders would
 /// otherwise sit among the files until the load finished. Each update is a
@@ -1405,10 +1636,15 @@ void FileListModel::rebuildVisibleItems(bool isNewPath, bool announceBefore, boo
         emit beforeDirectoryReset(isNewPath);
     }
 
+    // Deep results stand in for the folder's own entries while a search is
+    // showing. Everything below - selection, hidden files, sorting - works the
+    // same on either list.
+    QList<FileItem> &source = deepSearchActive() ? m_deepItems : m_allItems;
+
     // Carry the selection of the rows currently on screen back into the full
     // list, so it survives this rebuild. Rows hidden by the filter keep what
     // they had: filtering something out of view is not deselecting it.
-    if (!m_items.isEmpty() && !m_allItems.isEmpty()) {
+    if (!m_items.isEmpty() && !source.isEmpty()) {
         QHash<QString, bool> onScreen;
         onScreen.reserve(m_items.size());
         for (const auto &it : m_items) {
@@ -1416,7 +1652,7 @@ void FileListModel::rebuildVisibleItems(bool isNewPath, bool announceBefore, boo
                 onScreen.insert(it.fullPath, it.isSelected);
             }
         }
-        for (auto &it : m_allItems) {
+        for (auto &it : source) {
             const auto found = onScreen.constFind(it.fullPath);
             if (found != onScreen.constEnd()) {
                 it.isSelected = found.value();
@@ -1428,7 +1664,7 @@ void FileListModel::rebuildVisibleItems(bool isNewPath, bool announceBefore, boo
 
     beginResetModel();
     m_items.clear();
-    m_items.reserve(m_allItems.size() + 1);
+    m_items.reserve(source.size() + 1);
 
     // The ".." row is built before any filtering and is never subject to it,
     // so no filter can strand you in a folder you cannot leave.
@@ -1448,7 +1684,7 @@ void FileListModel::rebuildVisibleItems(bool isNewPath, bool announceBefore, boo
         }
     }
 
-    for (const FileItem &item : m_allItems) {
+    for (const FileItem &item : source) {
         if (!m_showHidden && item.isHidden) {
             continue;
         }

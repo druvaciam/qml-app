@@ -76,12 +76,14 @@ AppController::AppController(QObject *parent)
       m_fileOps(new FileOperationsService(this)),
       m_preview(new FilePreviewService(this))
 {
-    // Connect hidden file changes to auto-save session
-    if (m_leftPanel && m_leftPanel->model()) {
-        connect(m_leftPanel->model(), &FileListModel::showHiddenChanged, this, &AppController::saveSession);
-    }
-    if (m_rightPanel && m_rightPanel->model()) {
-        connect(m_rightPanel->model(), &FileListModel::showHiddenChanged, this, &AppController::saveSession);
+    // Both switches are modes the user set deliberately, so both are saved
+    // the moment they change rather than only at exit.
+    for (PanelController *panel : {m_leftPanel, m_rightPanel}) {
+        if (!panel || !panel->model()) {
+            continue;
+        }
+        connect(panel->model(), &FileListModel::showHiddenChanged, this, &AppController::saveSession);
+        connect(panel->model(), &FileListModel::deepSearchChanged, this, &AppController::saveSession);
     }
 
     // Load and restore last session paths and settings
@@ -172,6 +174,13 @@ void AppController::toggleHiddenFiles()
     }
 }
 
+void AppController::toggleDeepSearch()
+{
+    if (activePanel()) {
+        activePanel()->toggleDeepSearch();
+    }
+}
+
 void AppController::loadSession()
 {
     QSettings settings;
@@ -180,13 +189,19 @@ void AppController::loadSession()
     int savedActive = settings.value(QStringLiteral("session/activePanelIndex"), 0).toInt();
     bool leftHidden = settings.value(QStringLiteral("session/leftShowHidden"), false).toBool();
     bool rightHidden = settings.value(QStringLiteral("session/rightShowHidden"), false).toBool();
+    bool leftDeep = settings.value(QStringLiteral("session/leftDeepSearch"), false).toBool();
+    bool rightDeep = settings.value(QStringLiteral("session/rightDeepSearch"), false).toBool();
 
-    // Restore showHidden state on models before loading directories
+    // Both switches are restored before the folders load. Deep search comes
+    // back as a mode with an empty filter, so it arms the next search rather
+    // than starting one.
     if (m_leftPanel && m_leftPanel->model()) {
         m_leftPanel->model()->setShowHidden(leftHidden);
+        m_leftPanel->model()->setDeepSearch(leftDeep);
     }
     if (m_rightPanel && m_rightPanel->model()) {
         m_rightPanel->model()->setShowHidden(rightHidden);
+        m_rightPanel->model()->setDeepSearch(rightDeep);
     }
 
     QString homePath = QDir::homePath();
@@ -226,9 +241,11 @@ void AppController::saveSession()
 
     if (m_leftPanel && m_leftPanel->model()) {
         settings.setValue(QStringLiteral("session/leftShowHidden"), m_leftPanel->model()->showHidden());
+        settings.setValue(QStringLiteral("session/leftDeepSearch"), m_leftPanel->model()->deepSearch());
     }
     if (m_rightPanel && m_rightPanel->model()) {
         settings.setValue(QStringLiteral("session/rightShowHidden"), m_rightPanel->model()->showHidden());
+        settings.setValue(QStringLiteral("session/rightDeepSearch"), m_rightPanel->model()->deepSearch());
     }
     settings.sync();
 }

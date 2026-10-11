@@ -968,6 +968,12 @@ ApplicationWindow {
     }
 
     Shortcut {
+        sequence: "Ctrl+D"
+        enabled: !anyModalOpen()
+        onActivated: appCtrl.toggleDeepSearch()
+    }
+
+    Shortcut {
         sequence: "Ctrl+F"
         enabled: !anyModalOpen()
         onActivated: {

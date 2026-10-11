@@ -117,7 +117,9 @@ FocusScope {
                             id: filterInput
                             Layout.fillWidth: true
                             Layout.fillHeight: true
-                            placeholderText: "Filter files (*.cpp, name...)"
+                            placeholderText: root.controller.model.deepSearch
+                                             ? "Search all subfolders (*.cpp, name...)"
+                                             : "Filter files (*.cpp, name...)"
                             placeholderTextColor: Theme.textMuted
                             font.family: Theme.fontFamily
                             font.pixelSize: Theme.fontSizeSmall
@@ -214,6 +216,49 @@ FocusScope {
                     }
                 }
 
+                // Deep search: the filter looks through every subfolder.
+                Rectangle {
+                    Layout.preferredWidth: deepRow.implicitWidth + 14
+                    Layout.preferredHeight: 22
+                    Layout.alignment: Qt.AlignVCenter
+                    radius: Theme.radiusSmall
+                    color: root.controller.model.deepSearch ? Theme.accent : (deepMouse.containsMouse ? Theme.bgHover : "transparent")
+                    border.color: root.controller.model.deepSearch ? Theme.accent : Theme.borderSubtle
+                    border.width: 1
+
+                    Row {
+                        id: deepRow
+                        anchors.centerIn: parent
+                        spacing: 4
+
+                        Text {
+                            text: "⤵"
+                            font.pixelSize: 11
+                            color: root.controller.model.deepSearch ? "#0f172a" : Theme.textSecondary
+                        }
+
+                        Text {
+                            text: "Deep"
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.fontSizeSmall
+                            font.bold: root.controller.model.deepSearch
+                            color: root.controller.model.deepSearch ? "#0f172a" : Theme.textSecondary
+                        }
+                    }
+
+                    MouseArea {
+                        id: deepMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.controller.toggleDeepSearch()
+                        ToolTip.visible: containsMouse
+                        ToolTip.text: root.controller.model.deepSearch
+                                      ? "Search this folder only (Ctrl+D)"
+                                      : "Search every subfolder (Ctrl+D)"
+                    }
+                }
+
                 // Hidden Files Toggle
                 Rectangle {
                     Layout.preferredWidth: hiddenRow.implicitWidth + 14
@@ -298,13 +343,22 @@ FocusScope {
 
                     // Total items
                     Text {
-                        text: root.controller.model.isLoading
-                              ? root.controller.totalItemsCount + " item(s) so far"
-                              : root.controller.totalItemsCount + " item(s)"
+                        text: {
+                            const n = root.controller.totalItemsCount
+                            if (root.controller.model.deepSearchActive) {
+                                return root.controller.model.isLoading
+                                       ? n + " found so far"
+                                       : n + (root.controller.model.deepSearchTruncated
+                                              ? " found (limit reached)" : " found")
+                            }
+                            return root.controller.model.isLoading
+                                   ? n + " item(s) so far" : n + " item(s)"
+                        }
                         font.family: Theme.fontFamily
                         font.pixelSize: Theme.fontSizeSmall
-                        color: root.controller.model.isLoading ? Theme.accent
-                                                               : Theme.textSecondary
+                        color: (root.controller.model.isLoading
+                                || root.controller.model.deepSearchActive) ? Theme.accent
+                                                                           : Theme.textSecondary
                     }
 
                     // Separator
