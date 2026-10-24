@@ -43,7 +43,7 @@ Rectangle {
                 cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                 onClicked: root.controller.goBack()
                 ToolTip.visible: containsMouse && enabled
-                ToolTip.text: "Back (Alt+Left)"
+                ToolTip.text: qsTr("Back (Alt+Left)")
             }
         }
 
@@ -70,7 +70,7 @@ Rectangle {
                 cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                 onClicked: root.controller.goForward()
                 ToolTip.visible: containsMouse && enabled
-                ToolTip.text: "Forward (Alt+Right)"
+                ToolTip.text: qsTr("Forward (Alt+Right)")
             }
         }
 
@@ -95,7 +95,7 @@ Rectangle {
                 cursorShape: Qt.PointingHandCursor
                 onClicked: root.controller.navigateUp()
                 ToolTip.visible: containsMouse
-                ToolTip.text: "Parent Directory (Backspace / ..)"
+                ToolTip.text: qsTr("Parent Directory (Backspace / ..)")
             }
         }
 
@@ -120,7 +120,10 @@ Rectangle {
                 cursorShape: Qt.PointingHandCursor
                 onClicked: root.controller.navigateRoot()
                 ToolTip.visible: containsMouse
-                ToolTip.text: "Drive Root Directory (\)"
+                // The backslash is handed in rather than written into the
+                // translatable text: an escape inside a string a translator
+                // edits is one more thing that can be lost.
+                ToolTip.text: qsTr("Drive Root Directory (%1)").arg("\\")
             }
         }
 
@@ -221,7 +224,7 @@ Rectangle {
                     pathInput.copy()
                 }
                 ToolTip.visible: containsMouse
-                ToolTip.text: "Copy path to clipboard"
+                ToolTip.text: qsTr("Copy path to clipboard")
             }
         }
     }

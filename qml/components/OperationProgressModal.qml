@@ -66,7 +66,9 @@ Rectangle {
             // Current file name
             Text {
                 Layout.fillWidth: true
-                text: root.fileOps.currentFileName.length > 0 ? "Processing: " + root.fileOps.currentFileName : root.fileOps.statusMessage
+                text: root.fileOps.currentFileName.length > 0
+                      ? qsTr("Processing: %1").arg(root.fileOps.currentFileName)
+                      : root.fileOps.statusMessage
                 font.family: Theme.fontFamily
                 font.pixelSize: Theme.fontSizeSmall
                 color: Theme.textSecondary
@@ -112,9 +114,10 @@ Rectangle {
                     // work units, roughly two per file, not a count of items.
                     // The percentage is still meaningful because it is a ratio.
                     visible: root.fileOps.progressIsItemCount
-                    text: root.fileOps.totalItems > 0 ?
-                          root.fileOps.processedItems + " of " + root.fileOps.totalItems + " items" :
-                          "Scanning files..."
+                    text: root.fileOps.totalItems > 0
+                          ? qsTr("%1 of %2 items").arg(root.fileOps.processedItems)
+                                                  .arg(root.fileOps.totalItems)
+                          : qsTr("Scanning files...")
                     font.family: Theme.fontFamily
                     font.pixelSize: Theme.fontSizeSmall
                     color: Theme.textMuted
@@ -138,16 +141,17 @@ Rectangle {
                 Item { Layout.fillWidth: true }
 
                 Rectangle {
-                    width: 90
-                    height: 28
+                    Layout.preferredWidth: Math.max(90, opCancelLabel.implicitWidth + 24)
+                    Layout.preferredHeight: 28
                     radius: Theme.radiusSmall
                     color: cancelMouse.containsMouse ? Theme.dangerHover : Theme.bgHeader
                     border.color: Theme.borderSubtle
                     border.width: 1
 
                     Text {
+                        id: opCancelLabel
                         anchors.centerIn: parent
-                        text: "Cancel"
+                        text: qsTr("Cancel")
                         font.family: Theme.fontFamily
                         font.pixelSize: Theme.fontSizeSmall
                         font.bold: true

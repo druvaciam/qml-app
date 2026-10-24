@@ -80,7 +80,7 @@ FocusScope {
                     color: Theme.warning
                 }
                 Text {
-                    text: root.conflictNames.length === 1 ? "This file already exists"
+                    text: root.conflictNames.length === 1 ? qsTr("This file already exists")
                                                           : "These files already exist"
                     font.family: Theme.fontFamily
                     font.pixelSize: Theme.fontSizeLarge
@@ -128,7 +128,7 @@ FocusScope {
 
             Text {
                 Layout.fillWidth: true
-                text: "Your choice applies to all " + root.conflictNames.length + " item(s)."
+                text: qsTr("Your choice applies to all %n item(s).", "", root.conflictNames.length)
                 font.family: Theme.fontFamily
                 font.pixelSize: Theme.fontSizeSmall
                 color: Theme.textMuted
@@ -174,24 +174,24 @@ FocusScope {
                 }
 
                 ChoiceButton {
-                    label: "Cancel (Esc)"
+                    label: qsTr("Cancel (Esc)")
                     onClicked: root.cancel()
                 }
 
                 Item { Layout.fillWidth: true }
 
                 ChoiceButton {
-                    label: "Skip these"
+                    label: qsTr("Skip these")
                     onClicked: root.choose(FileOperationsService.Skip)
                 }
 
                 ChoiceButton {
-                    label: "Keep both"
+                    label: qsTr("Keep both")
                     onClicked: root.choose(FileOperationsService.KeepBoth)
                 }
 
                 ChoiceButton {
-                    label: "Replace (Enter)"
+                    label: qsTr("Replace (Enter)")
                     filled: true
                     accentColor: Theme.warning
                     onClicked: root.choose(FileOperationsService.Overwrite)

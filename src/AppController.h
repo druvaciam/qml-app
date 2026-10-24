@@ -83,6 +83,13 @@ public:
   QStringList draggedPaths() const { return m_draggedPaths; }
   void setDraggedPaths(const QStringList &paths);
   Q_INVOKABLE void clearDraggedPaths();
+  /// Hands the dragged files to the operating system, so they can be dropped
+  /// on any other application. The panel-to-panel drag is drawn by this
+  /// application itself and never leaves it; this is what Explorer, a mail
+  /// window or an upload field can actually receive.
+  ///
+  /// Blocks until the drop finishes, which is how a system drag works.
+  Q_INVOKABLE void startExternalDrag(const QStringList &paths);
   Q_INVOKABLE QStringList urlsToPaths(const QList<QUrl> &urls) const;
 
   // --- Dual-Pane Coordination ---
@@ -184,6 +191,10 @@ private:
   bool m_trayInstalled = false;
   class TrayEventFilter *m_eventFilter = nullptr;
 #endif
+  /// True while a system drag is running. Its event loop is nested inside the
+  /// normal one, so a second drag must not be started on top of it. Not
+  /// Windows-only: dragging out works wherever Qt has a drag backend.
+  bool m_externalDragRunning = false;
   FileOperationsService *m_fileOps = nullptr;
   FilePreviewService *m_preview = nullptr;
   int m_activePanelIndex = 0;

@@ -39,7 +39,7 @@ QVariantMap FilePreviewService::loadPreview(const QString &filePath, int maxByte
     QFileInfo info(filePath);
 
     if (!info.exists()) {
-        result["error"] = QStringLiteral("File does not exist.");
+        result["error"] = tr("File does not exist.");
         result["isValid"] = false;
         return result;
     }
@@ -141,9 +141,9 @@ QVariantMap FilePreviewService::loadPreview(const QString &filePath, int maxByte
         } else {
             DWORD winErr = GetLastError();
             if (winErr == ERROR_ACCESS_DENIED) {
-                openError = QStringLiteral("Access is denied (system protected or administrator permissions required).");
+                openError = tr("Access is denied (system protected or administrator permissions required).");
             } else if (winErr == ERROR_SHARING_VIOLATION) {
-                openError = QStringLiteral("Sharing violation (file is in exclusive use by another process).");
+                openError = tr("Sharing violation (file is in exclusive use by another process).");
             }
         }
     }
@@ -162,7 +162,7 @@ QVariantMap FilePreviewService::loadPreview(const QString &filePath, int maxByte
     if (!opened) {
         result["isText"] = false;
         result["isImage"] = false;
-        result["error"] = openError.isEmpty() ? QStringLiteral("Cannot open file for reading.") : openError;
+        result["error"] = openError.isEmpty() ? tr("Cannot open file for reading.") : openError;
         return result;
     }
 
@@ -209,7 +209,7 @@ QVariantMap FilePreviewService::loadPreview(const QString &filePath, int maxByte
     if (isBinary) {
         result["isText"] = false;
         result["isBinary"] = true;
-        result["content"] = QStringLiteral("[Binary File - Preview Not Available]");
+        result["content"] = tr("[Binary File - Preview Not Available]");
     } else {
         result["isText"] = true;
         result["isBinary"] = false;

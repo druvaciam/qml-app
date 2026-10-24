@@ -112,10 +112,10 @@ void PanelController::navigateTo(const QString &path)
         const QFileInfo info(cleanPath);
         if (info.exists()) {
             qCWarning(lcNav).noquote() << "refused" << cleanPath << "- it is a file";
-            emit navigationError(QStringLiteral("'%1' is a file, not a folder.").arg(cleanPath));
+            emit navigationError(tr("'%1' is a file, not a folder.").arg(cleanPath));
         } else {
-            emit navigationError(QStringLiteral("Cannot open '%1'. The folder does not exist, or is not "
-                                                "reachable (a removable drive may have been unplugged).")
+            emit navigationError(tr("Cannot open '%1'. The folder does not exist, or is not "
+                                    "reachable (a removable drive may have been unplugged).")
                                      .arg(cleanPath));
         }
         return;

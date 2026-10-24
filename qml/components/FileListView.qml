@@ -372,7 +372,7 @@ FocusScope {
                     spacing: 4
 
                     Text {
-                        text: "Name"
+                        text: qsTr("Name")
                         font.family: Theme.fontFamily
                         font.pixelSize: Theme.fontSizeSmall
                         font.bold: true
@@ -410,7 +410,7 @@ FocusScope {
                     spacing: 2
 
                     Text {
-                        text: "Ext"
+                        text: qsTr("Ext")
                         font.family: Theme.fontFamily
                         font.pixelSize: Theme.fontSizeSmall
                         font.bold: true
@@ -455,7 +455,7 @@ FocusScope {
                     }
 
                     Text {
-                        text: "Size"
+                        text: qsTr("Size")
                         font.family: Theme.fontFamily
                         font.pixelSize: Theme.fontSizeSmall
                         font.bold: true
@@ -484,7 +484,7 @@ FocusScope {
                     spacing: 2
 
                     Text {
-                        text: "Date"
+                        text: qsTr("Date")
                         font.family: Theme.fontFamily
                         font.pixelSize: Theme.fontSizeSmall
                         font.bold: true

@@ -68,7 +68,7 @@ Rectangle {
                         }
 
                         Text {
-                            text: modelData.formattedFree + " free"
+                            text: qsTr("%1 free").arg(modelData.formattedFree)
                             font.family: Theme.fontFamily
                             font.pixelSize: 10
                             color: isCurrentDrive ? "#bae6fd" : Theme.textMuted
@@ -87,9 +87,10 @@ Rectangle {
                         }
 
                         ToolTip.visible: containsMouse
-                        ToolTip.text: (modelData.displayName.length > 0 ? modelData.displayName + "\n" : "") +
-                                      "Total: " + modelData.formattedTotal + "\n" +
-                                      "Free: " + modelData.formattedFree + " (" + Math.round((1.0 - modelData.percentUsed) * 100) + "%)"
+                        ToolTip.text: (modelData.displayName.length > 0 ? modelData.displayName + "\n" : "")
+                                      + qsTr("Total: %1").arg(modelData.formattedTotal) + "\n"
+                                      + qsTr("Free: %1 (%2%)").arg(modelData.formattedFree)
+                                                              .arg(Math.round((1.0 - modelData.percentUsed) * 100))
                         ToolTip.delay: 400
                     }
                 }
@@ -119,7 +120,7 @@ Rectangle {
                 cursorShape: Qt.PointingHandCursor
                 onClicked: root.controller.refreshDrives()
                 ToolTip.visible: containsMouse
-                ToolTip.text: "Refresh drive list"
+                ToolTip.text: qsTr("Refresh drive list")
                 ToolTip.delay: 300
             }
         }

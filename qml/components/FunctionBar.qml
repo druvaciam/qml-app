@@ -85,39 +85,39 @@ Rectangle {
 
         FunctionButton {
             keyNumber: "F3"
-            actionLabel: "View"
+            actionLabel: qsTr("View")
             onClicked: root.requestView()
         }
 
         FunctionButton {
             keyNumber: "F4"
-            actionLabel: "Edit"
+            actionLabel: qsTr("Edit")
             onClicked: root.requestEdit()
         }
 
         FunctionButton {
             keyNumber: "F5"
-            actionLabel: "Copy"
+            actionLabel: qsTr("Copy")
             accentColor: Theme.success
             onClicked: root.requestCopy()
         }
 
         FunctionButton {
             keyNumber: "F6"
-            actionLabel: "Move"
+            actionLabel: qsTr("Move")
             accentColor: Theme.warning
             onClicked: root.requestMove()
         }
 
         FunctionButton {
             keyNumber: "F7"
-            actionLabel: "NewFolder"
+            actionLabel: qsTr("NewFolder")
             onClicked: root.requestNewFolder()
         }
 
         FunctionButton {
             keyNumber: "F8"
-            actionLabel: "Delete"
+            actionLabel: qsTr("Delete")
             accentColor: Theme.danger
             onClicked: root.requestDelete()
         }
@@ -144,7 +144,7 @@ Rectangle {
                 cursorShape: Qt.PointingHandCursor
                 onClicked: root.requestSwap()
                 ToolTip.visible: containsMouse
-                ToolTip.text: "Swap Panes (Ctrl+U)"
+                ToolTip.text: qsTr("Swap Panes (Ctrl+U)")
             }
         }
 
@@ -169,7 +169,7 @@ Rectangle {
                 cursorShape: Qt.PointingHandCursor
                 onClicked: root.requestTerminal()
                 ToolTip.visible: containsMouse
-                ToolTip.text: "Open Terminal in active folder"
+                ToolTip.text: qsTr("Open Terminal in active folder")
             }
         }
 
@@ -194,7 +194,7 @@ Rectangle {
                 cursorShape: Qt.PointingHandCursor
                 onClicked: root.requestRefresh()
                 ToolTip.visible: containsMouse
-                ToolTip.text: "Refresh All (Ctrl+R)"
+                ToolTip.text: qsTr("Refresh All (Ctrl+R)")
             }
         }
     }

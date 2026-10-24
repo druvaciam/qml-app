@@ -38,6 +38,7 @@ COPY CMakeLists.txt ./
 COPY src/ ./src/
 COPY qml/ ./qml/
 COPY resources/ ./resources/
+COPY i18n/ ./i18n/
 
 # 3. Configure & compile in Release mode
 RUN cmake -B build-release -G Ninja -DCMAKE_BUILD_TYPE=Release \

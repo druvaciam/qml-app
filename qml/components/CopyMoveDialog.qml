@@ -112,7 +112,7 @@ FocusScope {
                 }
 
                 Text {
-                    text: root.isMove ? "Move / Rename (F6)" : "Copy (F5)"
+                    text: root.isMove ? qsTr("Move / Rename (F6)") : qsTr("Copy (F5)")
                     font.family: Theme.fontFamily
                     font.pixelSize: Theme.fontSizeLarge
                     font.bold: true
@@ -122,7 +122,8 @@ FocusScope {
 
             // Prompt
             Text {
-                text: (root.isMove ? "Move " : "Copy ") + root.itemsList.length + " item(s) to:"
+                text: root.isMove ? qsTr("Move %n item(s) to:", "", root.itemsList.length)
+                                  : qsTr("Copy %n item(s) to:", "", root.itemsList.length)
                 font.family: Theme.fontFamily
                 font.pixelSize: Theme.fontSizeBase
                 color: Theme.textPrimary
@@ -201,16 +202,17 @@ FocusScope {
                     // ring has to claim Tab for itself or focus walks out.
                     Keys.onTabPressed: (event) => { root.stepFocus(1); event.accepted = true; }
                     Keys.onBacktabPressed: (event) => { root.stepFocus(-1); event.accepted = true; }
-                    width: 95
-                    height: 32
+                    Layout.preferredWidth: Math.max(95, cmCancelLabel.implicitWidth + 24)
+                    Layout.preferredHeight: 32
                     radius: Theme.radiusSmall
                     color: cancelMouse.containsMouse ? Theme.bgHover : Theme.bgHeader
                     border.color: cancelButton.activeFocus ? Theme.textPrimary : Theme.borderSubtle
                     border.width: cancelButton.activeFocus ? 2 : 1
 
                     Text {
+                        id: cmCancelLabel
                         anchors.centerIn: parent
-                        text: "Cancel (Esc)"
+                        text: qsTr("Cancel (Esc)")
                         font.family: Theme.fontFamily
                         font.pixelSize: Theme.fontSizeSmall
                         color: Theme.textPrimary
@@ -236,8 +238,8 @@ FocusScope {
                     // ring has to claim Tab for itself or focus walks out.
                     Keys.onTabPressed: (event) => { root.stepFocus(1); event.accepted = true; }
                     Keys.onBacktabPressed: (event) => { root.stepFocus(-1); event.accepted = true; }
-                    width: 125
-                    height: 32
+                    Layout.preferredWidth: Math.max(125, cmOkLabel.implicitWidth + 24)
+                    Layout.preferredHeight: 32
                     radius: Theme.radiusSmall
                     color: okMouse.containsMouse ? Theme.accentHover : Theme.accent
                     // Says which button Enter will press: the dialog's default
@@ -247,8 +249,9 @@ FocusScope {
                                    || (!targetInput.activeFocus && !cancelButton.activeFocus)) ? 2 : 0
 
                     Text {
+                        id: cmOkLabel
                         anchors.centerIn: parent
-                        text: root.isMove ? "🚚 Move (Enter)" : "📋 Copy (Enter)"
+                        text: root.isMove ? qsTr("🚚 Move (Enter)") : qsTr("📋 Copy (Enter)")
                         font.family: Theme.fontFamily
                         font.pixelSize: Theme.fontSizeSmall
                         font.bold: true

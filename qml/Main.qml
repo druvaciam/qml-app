@@ -16,7 +16,7 @@ ApplicationWindow {
     // a window when its button is clicked.
     flags: Qt.Window | Qt.FramelessWindowHint | Qt.WindowSystemMenuHint
            | Qt.WindowMinimizeButtonHint | Qt.WindowMaximizeButtonHint
-    title: "QML Commander - Dual-Pane File Manager"
+    title: qsTr("QML Commander - Dual-Pane File Manager")
     color: Theme.bgApp
 
     Timer {
@@ -147,6 +147,18 @@ ApplicationWindow {
             dragModifiers = modifiers
         }
 
+        // Left the window: from here on the drag belongs to the system, so
+        // the overlay drawn above comes down and the files are handed over.
+        // Deferred by one pass because startExternalDrag does not return
+        // until the drop is over, and this is a mouse handler.
+        if (rootX < 0 || rootY < 0 || rootX > window.width || rootY > window.height) {
+            const paths = draggedPaths
+            console.log("drag: left the window - handing", paths.length, "path(s) to the system")
+            cancelGlobalDrag()
+            Qt.callLater(function() { appCtrl.startExternalDrag(paths) })
+            return
+        }
+
         let hit = paneAt(rootX, rootY)
         let isSamePanel = false
 
@@ -270,7 +282,7 @@ ApplicationWindow {
                     }
 
                     Text {
-                        text: "QML Commander"
+                        text: qsTr("QML Commander")
                         font.family: Theme.fontFamily
                         font.pixelSize: Theme.fontSizeLarge
                         font.bold: true
@@ -286,7 +298,7 @@ ApplicationWindow {
                         Text {
                             id: tagText
                             anchors.centerIn: parent
-                            text: "Qt 6 C++ / QML"
+                            text: qsTr("Qt 6 C++ / QML")
                             font.family: Theme.fontFamily
                             font.pixelSize: 10
                             font.bold: true
@@ -315,7 +327,7 @@ ApplicationWindow {
                             anchors.centerIn: parent
                             spacing: 4
                             Text { text: "⇄"; font.pixelSize: 12; color: Theme.accent }
-                            Text { text: "Swap (Ctrl+U)"; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSizeSmall; color: Theme.textPrimary }
+                            Text { text: qsTr("Swap (Ctrl+U)"); font.family: Theme.fontFamily; font.pixelSize: Theme.fontSizeSmall; color: Theme.textPrimary }
                         }
 
                         MouseArea {
@@ -341,7 +353,7 @@ ApplicationWindow {
                             anchors.centerIn: parent
                             spacing: 4
                             Text { text: "="; font.pixelSize: 12; color: Theme.accent }
-                            Text { text: "Equalize (Ctrl+E)"; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSizeSmall; color: Theme.textPrimary }
+                            Text { text: qsTr("Equalize (Ctrl+E)"); font.family: Theme.fontFamily; font.pixelSize: Theme.fontSizeSmall; color: Theme.textPrimary }
                         }
 
                         MouseArea {
@@ -367,7 +379,7 @@ ApplicationWindow {
                             anchors.centerIn: parent
                             spacing: 4
                             Text { text: "⌨"; font.pixelSize: 12; color: Theme.accent }
-                            Text { text: "Terminal"; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSizeSmall; color: Theme.textPrimary }
+                            Text { text: qsTr("Terminal"); font.family: Theme.fontFamily; font.pixelSize: Theme.fontSizeSmall; color: Theme.textPrimary }
                         }
 
                         MouseArea {
@@ -376,6 +388,35 @@ ApplicationWindow {
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
                             onClicked: appCtrl.openTerminalInActivePanel()
+                        }
+                    }
+
+                    // Language Button: steps through the languages.
+                    Rectangle {
+                        Layout.preferredWidth: 34
+                        Layout.preferredHeight: 28
+                        radius: Theme.radiusSmall
+                        color: topLangMouse.containsMouse ? Theme.bgHover : Theme.bgPanel
+                        border.color: Theme.borderSubtle
+                        border.width: 1
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: Localization.languageLabel
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.fontSizeSmall
+                            font.bold: true
+                            color: Theme.textPrimary
+                        }
+
+                        MouseArea {
+                            id: topLangMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: Localization.nextLanguage()
+                            ToolTip.visible: containsMouse
+                            ToolTip.text: qsTr("Language: %1 (Ctrl+L)").arg(Localization.languageName)
                         }
                     }
 
@@ -402,7 +443,7 @@ ApplicationWindow {
                             cursorShape: Qt.PointingHandCursor
                             onClicked: appCtrl.refreshAll()
                             ToolTip.visible: containsMouse
-                            ToolTip.text: "Refresh All (Ctrl+R)"
+                            ToolTip.text: qsTr("Refresh All (Ctrl+R)")
                         }
                     }
                 }
@@ -443,7 +484,7 @@ ApplicationWindow {
                             cursorShape: Qt.PointingHandCursor
                             onClicked: window.showMinimized()
                             ToolTip.visible: containsMouse
-                            ToolTip.text: "Minimize"
+                            ToolTip.text: qsTr("Minimize")
                         }
                     }
 
@@ -473,7 +514,7 @@ ApplicationWindow {
                                 }
                             }
                             ToolTip.visible: containsMouse
-                            ToolTip.text: (window.visibility === Window.Maximized) ? "Restore Down" : "Maximize"
+                            ToolTip.text: (window.visibility === Window.Maximized) ? qsTr("Restore Down") : qsTr("Maximize")
                         }
                     }
 
@@ -497,7 +538,7 @@ ApplicationWindow {
                             cursorShape: Qt.PointingHandCursor
                             onClicked: window.close()
                             ToolTip.visible: containsMouse
-                            ToolTip.text: "Close"
+                            ToolTip.text: qsTr("Close")
                         }
                     }
                 }
@@ -834,7 +875,7 @@ ApplicationWindow {
                         color: msgOkMouse.containsMouse ? Theme.accentHover : Theme.accent
                         Text {
                             anchors.centerIn: parent
-                            text: "OK"
+                            text: qsTr("OK")
                             font.bold: true
                             color: "#0f172a"
                         }
@@ -968,6 +1009,12 @@ ApplicationWindow {
     }
 
     Shortcut {
+        sequence: "Ctrl+L"
+        enabled: !anyModalOpen()
+        onActivated: Localization.nextLanguage()
+    }
+
+    Shortcut {
         sequence: "Ctrl+D"
         enabled: !anyModalOpen()
         onActivated: appCtrl.toggleDeepSearch()
@@ -1074,7 +1121,7 @@ ApplicationWindow {
                 Text {
                     id: actionTagText
                     anchors.centerIn: parent
-                    text: !window.dragIsValidTarget ? "CANCEL" : (window.dragIsMove ? "MOVE" : "COPY")
+                    text: !window.dragIsValidTarget ? qsTr("CANCEL") : (window.dragIsMove ? qsTr("MOVE") : qsTr("COPY"))
                     font.family: Theme.fontFamily
                     font.pixelSize: 10
                     font.bold: true

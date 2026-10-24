@@ -65,7 +65,7 @@ Rectangle {
                 }
 
                 Text {
-                    text: root.isPermanent ? "Permanently Delete (Shift+Del)" : "Move to Recycle Bin (Del / F8)"
+                    text: root.isPermanent ? qsTr("Permanently Delete (Shift+Del)") : qsTr("Move to Recycle Bin (Del / F8)")
                     font.family: Theme.fontFamily
                     font.pixelSize: Theme.fontSizeLarge
                     font.bold: true
@@ -74,9 +74,11 @@ Rectangle {
             }
 
             Text {
-                text: root.isPermanent ?
-                      ("Are you sure you want to PERMANENTLY delete " + root.itemsList.length + " item(s)?\nThis cannot be undone.") :
-                      ("Are you sure you want to move " + root.itemsList.length + " item(s) to the Recycle Bin?")
+                text: root.isPermanent
+                      ? qsTr("Are you sure you want to PERMANENTLY delete %n item(s)?\nThis cannot be undone.",
+                             "", root.itemsList.length)
+                      : qsTr("Are you sure you want to move %n item(s) to the Recycle Bin?",
+                             "", root.itemsList.length)
                 font.family: Theme.fontFamily
                 font.pixelSize: Theme.fontSizeBase
                 color: Theme.textPrimary
@@ -118,16 +120,17 @@ Rectangle {
 
                 // Cancel Button
                 Rectangle {
-                    width: 80
-                    height: 30
+                    Layout.preferredWidth: Math.max(80, cancelLabel.implicitWidth + 24)
+                    Layout.preferredHeight: 30
                     radius: Theme.radiusSmall
                     color: cancelMouse.containsMouse ? Theme.bgHover : Theme.bgHeader
                     border.color: Theme.borderSubtle
                     border.width: 1
 
                     Text {
+                        id: cancelLabel
                         anchors.centerIn: parent
-                        text: "Cancel"
+                        text: qsTr("Cancel")
                         font.family: Theme.fontFamily
                         font.pixelSize: Theme.fontSizeSmall
                         color: Theme.textPrimary
@@ -144,16 +147,17 @@ Rectangle {
 
                 // Delete / Trash Button
                 Rectangle {
-                    width: root.isPermanent ? 145 : 130
-                    height: 30
+                    Layout.preferredWidth: Math.max(130, delLabel.implicitWidth + 24)
+                    Layout.preferredHeight: 30
                     radius: Theme.radiusSmall
                     color: root.isPermanent ?
                            (delMouse.containsMouse ? Theme.dangerHover : Theme.danger) :
                            (delMouse.containsMouse ? Theme.accentHover : Theme.accent)
 
                     Text {
+                        id: delLabel
                         anchors.centerIn: parent
-                        text: root.isPermanent ? "🗑 Delete Forever" : "♻️ Move to Trash"
+                        text: root.isPermanent ? qsTr("🗑 Delete Forever") : qsTr("♻️ Move to Trash")
                         font.family: Theme.fontFamily
                         font.pixelSize: Theme.fontSizeSmall
                         font.bold: true

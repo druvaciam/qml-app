@@ -358,7 +358,7 @@ Item {
 
                 Text {
                     anchors.centerIn: parent
-                    text: "■ Stop"
+                    text: qsTr("■ Stop")
                     font.family: Theme.fontFamily
                     font.pixelSize: Theme.fontSizeSmall
                     color: Theme.textPrimary

@@ -280,7 +280,7 @@ Rectangle {
                 visible: !root.immersive
 
                 Text {
-                    text: root.isEditMode ? "✏️ Edit File" : "👁 Quick View"
+                    text: root.isEditMode ? qsTr("✏️ Edit File") : qsTr("👁 Quick View")
                     font.family: Theme.fontFamily
                     font.pixelSize: Theme.fontSizeTitle
                     font.bold: true
@@ -350,7 +350,7 @@ Rectangle {
                         cursorShape: Qt.PointingHandCursor
                         onClicked: root.previewService.openInDefaultApp(root.filePath)
                         ToolTip.visible: containsMouse
-                        ToolTip.text: "Open with system default application"
+                        ToolTip.text: qsTr("Open with system default application")
                     }
                 }
 
@@ -378,7 +378,7 @@ Rectangle {
                         cursorShape: Qt.PointingHandCursor
                         onClicked: root.close()
                         ToolTip.visible: containsMouse
-                        ToolTip.text: "Close (Esc)"
+                        ToolTip.text: qsTr("Close (Esc)")
                     }
                 }
             }
@@ -585,7 +585,10 @@ Rectangle {
 
                         Text {
                             Layout.alignment: Qt.AlignHCenter
-                            text: (root.fileData.imageWidth > 0 ? "Resolution: " + root.fileData.imageWidth + " x " + root.fileData.imageHeight + " px" : "")
+                            text: root.fileData.imageWidth > 0
+                                  ? qsTr("Resolution: %1 x %2 px").arg(root.fileData.imageWidth)
+                                                                  .arg(root.fileData.imageHeight)
+                                  : ""
                             font.family: Theme.fontMono
                             font.pixelSize: Theme.fontSizeSmall
                             color: Theme.textSecondary
@@ -609,7 +612,7 @@ Rectangle {
                     }
 
                     Text {
-                        text: root.fileData.error ? "Cannot Read File" : "Binary File"
+                        text: root.fileData.error ? qsTr("Cannot Read File") : qsTr("Binary File")
                         font.family: Theme.fontFamily
                         font.pixelSize: Theme.fontSizeLarge
                         font.bold: true
@@ -618,7 +621,7 @@ Rectangle {
                     }
 
                     Text {
-                        text: root.fileData.error || "Binary or unsupported preview format."
+                        text: root.fileData.error || qsTr("Binary or unsupported preview format.")
                         font.family: Theme.fontFamily
                         font.pixelSize: Theme.fontSizeSmall
                         color: Theme.textSecondary
@@ -637,7 +640,7 @@ Rectangle {
 
                         Text {
                             anchors.centerIn: parent
-                            text: "Open with System App"
+                            text: qsTr("Open with System App")
                             font.family: Theme.fontFamily
                             font.pixelSize: Theme.fontSizeSmall
                             font.bold: true
@@ -676,7 +679,7 @@ Rectangle {
                 // Only part of a large file is loaded, so saving would discard the rest.
                 Text {
                     visible: Boolean(root.isEditMode && root.fileData?.isTruncated)
-                    text: "⚠ Only the first part of this file is loaded — read-only"
+                    text: qsTr("⚠ Only the first part of this file is loaded — read-only")
                     font.family: Theme.fontFamily
                     font.pixelSize: Theme.fontSizeSmall
                     color: Theme.warning
@@ -726,7 +729,7 @@ Rectangle {
 
                     Text {
                         anchors.centerIn: parent
-                        text: "💾 Save (Ctrl+S)"
+                        text: qsTr("💾 Save (Ctrl+S)")
                         font.family: Theme.fontFamily
                         font.pixelSize: Theme.fontSizeSmall
                         font.bold: true
@@ -765,7 +768,7 @@ Rectangle {
 
                     Text {
                         anchors.centerIn: parent
-                        text: "Close (Esc)"
+                        text: qsTr("Close (Esc)")
                         font.family: Theme.fontFamily
                         font.pixelSize: Theme.fontSizeSmall
                         color: Theme.textPrimary

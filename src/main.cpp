@@ -15,6 +15,7 @@
 #include <cstdio>
 
 #include "Logging.h"
+#include "Localization.h"
 
 namespace {
 
@@ -198,6 +199,12 @@ int main(int argc, char *argv[])
     app.setWindowIcon(appIcon);
 
     QQuickStyle::setStyle(QStringLiteral("Basic"));
+
+    // Asked for here rather than left to the engine: constructing it installs
+    // the saved language's translator, and that has to happen before the first
+    // QML object is built. The engine's own singleton lookup comes later and
+    // gets this same instance through Localization::create().
+    Localization::instance();
 
     QQmlApplicationEngine engine;
     engine.addImportPath(QStringLiteral("qrc:/"));

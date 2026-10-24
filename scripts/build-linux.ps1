@@ -38,20 +38,38 @@ function Invoke-Checked([string]$What, [scriptblock]$Cmd) {
     if ($LASTEXITCODE -ne 0) { throw "$What failed with exit code $LASTEXITCODE" }
 }
 
+# Is the daemon answering? Judged by the exit code alone.
+#
+# Not "docker info 2>$null": redirecting a native command's stderr turns every
+# line it writes there into a PowerShell error record, and $ErrorActionPreference
+# = "Stop" then makes it fatal. "docker info" writes warnings to stderr while
+# succeeding - "No blkio throttle.read_bps_device support" on this machine - so
+# the probe killed the script while the daemon was perfectly healthy.
+function Test-DockerUp {
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        & docker info *>$null
+        return ($LASTEXITCODE -eq 0)
+    } finally {
+        $ErrorActionPreference = $prev
+    }
+}
+
 # ---- 1. the daemon -----------------------------------------------------------
-docker info 2>$null | Out-Null
-if ($LASTEXITCODE -ne 0) {
+if (-not (Test-DockerUp)) {
     $desktop = "$env:ProgramFiles\Docker\Docker\Docker Desktop.exe"
     if (-not (Test-Path $desktop)) { throw "Docker daemon is not running and Docker Desktop was not found at $desktop" }
     Write-Host "Docker daemon not running - starting Docker Desktop" -ForegroundColor Yellow
     Start-Process $desktop | Out-Null
     $waited = 0
+    $up = $false
     do {
         Start-Sleep -Seconds 3
         $waited += 3
-        docker info 2>$null | Out-Null
-    } until ($LASTEXITCODE -eq 0 -or $waited -ge 180)
-    if ($LASTEXITCODE -ne 0) { throw "Docker daemon did not come up within $waited s" }
+        $up = Test-DockerUp
+    } until ($up -or $waited -ge 180)
+    if (-not $up) { throw "Docker daemon did not come up within $waited s" }
     Write-Host "  daemon up after $waited s"
 }
 
@@ -63,7 +81,7 @@ try {
     # A fingerprint of everything the Dockerfile copies in. It goes into the
     # image as a label and is read back afterwards: if the two differ, the
     # build did not run on this tree, whatever "docker build" printed.
-    $files = Get-ChildItem src, qml, resources, CMakeLists.txt, Dockerfile.linux, scripts\seed_testdata.sh -Recurse -File |
+    $files = Get-ChildItem src, qml, resources, i18n, CMakeLists.txt, Dockerfile.linux, scripts\seed_testdata.sh -Recurse -File |
              Sort-Object FullName
     $sha = [System.Security.Cryptography.SHA256]::Create()
     $all = New-Object System.IO.MemoryStream

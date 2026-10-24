@@ -16,6 +16,7 @@ find_package(Qt6 6.5 REQUIRED COMPONENTS
     Quick
     QuickControls2
     Concurrent
+    LinguistTools
 )
 
 # Optional on purpose: a Qt install may not include Multimedia, and the rest of
@@ -73,6 +74,8 @@ qt_add_qml_module(appQmlCommander
         src/PanelController.cpp
         src/AppController.h
         src/AppController.cpp
+        src/Localization.h
+        src/Localization.cpp
     QML_FILES
         qml/Main.qml
         qml/components/FilePanel.qml
@@ -105,6 +108,19 @@ if(TARGET Qt6::Multimedia)
     target_link_libraries(appQmlCommander PRIVATE Qt6::Multimedia)
     target_compile_definitions(appQmlCommander PRIVATE QMLCOMMANDER_HAS_MULTIMEDIA)
 endif()
+
+# The interface can be switched to another language while running. The .ts
+# catalogue is the editable source; lrelease turns it into the .qm the
+# application loads from :/i18n when the language changes.
+# -locations none: the .ts keeps no file names or line numbers. They are only
+# for Qt Linguist's "show me the code" and cost a rewritten line number for
+# every entry below an edit; the compiled .qm never contained them, and
+# lookup at run time is by context plus source text.
+qt_add_translations(appQmlCommander
+    TS_FILES i18n/qmlcommander_be.ts
+    RESOURCE_PREFIX "/i18n"
+    LUPDATE_OPTIONS -locations none
+)
 
 if(WIN32)
     add_compile_definitions(NOMINMAX)

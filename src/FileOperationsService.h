@@ -222,7 +222,7 @@ private:
     /// Applies Ask/Skip up front. Returns false when the caller should stop.
     bool resolveConflicts(QStringList &sourcePaths, const QString &destinationDir,
                           bool isMove, int &policy);
-    bool checkNotIntoOwnSubfolder(const QStringList &sourcePaths, const QString &destinationDir, const QString &verb);
+    bool checkNotIntoOwnSubfolder(const QStringList &sourcePaths, const QString &destinationDir, bool isMove);
     /// Called from the worker thread. Only records the numbers; the GUI thread
     /// publishes them on a timer. Queuing one cross-thread call per file floods
     /// the event loop, so the values arrive late, in bursts, and stale ones from

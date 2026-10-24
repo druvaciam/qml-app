@@ -118,8 +118,8 @@ FocusScope {
                             Layout.fillWidth: true
                             Layout.fillHeight: true
                             placeholderText: root.controller.model.deepSearch
-                                             ? "Search all subfolders (*.cpp, name...)"
-                                             : "Filter files (*.cpp, name...)"
+                                             ? qsTr("Search all subfolders (*.cpp, name...)")
+                                             : qsTr("Filter files (*.cpp, name...)")
                             placeholderTextColor: Theme.textMuted
                             font.family: Theme.fontFamily
                             font.pixelSize: Theme.fontSizeSmall
@@ -238,7 +238,7 @@ FocusScope {
                         }
 
                         Text {
-                            text: "Deep"
+                            text: qsTr("Deep")
                             font.family: Theme.fontFamily
                             font.pixelSize: Theme.fontSizeSmall
                             font.bold: root.controller.model.deepSearch
@@ -254,8 +254,8 @@ FocusScope {
                         onClicked: root.controller.toggleDeepSearch()
                         ToolTip.visible: containsMouse
                         ToolTip.text: root.controller.model.deepSearch
-                                      ? "Search this folder only (Ctrl+D)"
-                                      : "Search every subfolder (Ctrl+D)"
+                                      ? qsTr("Search this folder only (Ctrl+D)")
+                                      : qsTr("Search every subfolder (Ctrl+D)")
                     }
                 }
 
@@ -281,7 +281,7 @@ FocusScope {
                         }
 
                         Text {
-                            text: "Hidden"
+                            text: qsTr("Hidden")
                             font.family: Theme.fontFamily
                             font.pixelSize: Theme.fontSizeSmall
                             font.bold: root.controller.model.showHidden
@@ -296,7 +296,7 @@ FocusScope {
                         cursorShape: Qt.PointingHandCursor
                         onClicked: root.controller.toggleShowHidden()
                         ToolTip.visible: containsMouse
-                        ToolTip.text: root.controller.model.showHidden ? "Hide hidden/system files (Ctrl+H)" : "Show hidden/system files (Ctrl+H)"
+                        ToolTip.text: root.controller.model.showHidden ? qsTr("Hide hidden/system files (Ctrl+H)") : qsTr("Show hidden/system files (Ctrl+H)")
                     }
                 }
             }
@@ -343,16 +343,21 @@ FocusScope {
 
                     // Total items
                     Text {
+                        // %n lets a translator put the number where their own
+                        // language wants it, and choose the plural form for it.
                         text: {
                             const n = root.controller.totalItemsCount
                             if (root.controller.model.deepSearchActive) {
-                                return root.controller.model.isLoading
-                                       ? n + " found so far"
-                                       : n + (root.controller.model.deepSearchTruncated
-                                              ? " found (limit reached)" : " found")
+                                if (root.controller.model.isLoading) {
+                                    return qsTr("%n found so far", "", n)
+                                }
+                                return root.controller.model.deepSearchTruncated
+                                       ? qsTr("%n found (limit reached)", "", n)
+                                       : qsTr("%n found", "", n)
                             }
                             return root.controller.model.isLoading
-                                   ? n + " item(s) so far" : n + " item(s)"
+                                   ? qsTr("%n item(s) so far", "", n)
+                                   : qsTr("%n item(s)", "", n)
                         }
                         font.family: Theme.fontFamily
                         font.pixelSize: Theme.fontSizeSmall
@@ -370,9 +375,10 @@ FocusScope {
 
                     // Selection status
                     Text {
-                        text: root.controller.selectedItemsCount > 0 ?
-                              root.controller.selectedItemsCount + " selected (" + root.controller.selectedSizeFormatted + ")" :
-                              "None selected"
+                        text: root.controller.selectedItemsCount > 0
+                              ? qsTr("%1 selected (%2)").arg(root.controller.selectedItemsCount)
+                                                        .arg(root.controller.selectedSizeFormatted)
+                              : qsTr("None selected")
                         font.family: Theme.fontFamily
                         font.pixelSize: Theme.fontSizeSmall
                         font.bold: root.controller.selectedItemsCount > 0
@@ -383,8 +389,9 @@ FocusScope {
 
                     // Drive free space
                     Text {
-                        text: root.controller.currentDriveInfo.formattedFree.length > 0 ?
-                              "Free: " + root.controller.currentDriveInfo.formattedFree : ""
+                        text: root.controller.currentDriveInfo.formattedFree.length > 0
+                              ? qsTr("Free: %1").arg(root.controller.currentDriveInfo.formattedFree)
+                              : ""
                         font.family: Theme.fontMono
                         font.pixelSize: Theme.fontSizeSmall
                         color: Theme.textSecondary
@@ -430,7 +437,7 @@ FocusScope {
 
             Text {
                 anchors.centerIn: parent
-                text: "Reading folder\u2026"
+                text: qsTr("Reading folder\u2026")
                 font.family: Theme.fontFamily
                 font.pixelSize: Theme.fontSizeSmall
                 color: Theme.textSecondary

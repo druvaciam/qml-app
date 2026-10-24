@@ -65,7 +65,7 @@ Rectangle {
             spacing: 12
 
             Text {
-                text: "📁 Create New Folder (F7)"
+                text: qsTr("📁 Create New Folder (F7)")
                 font.family: Theme.fontFamily
                 font.pixelSize: Theme.fontSizeLarge
                 font.bold: true
@@ -116,8 +116,8 @@ Rectangle {
 
                 // Cancel Button
                 Rectangle {
-                    width: 80
-                    height: 30
+                    Layout.preferredWidth: Math.max(80, nfCancelLabel.implicitWidth + 24)
+                    Layout.preferredHeight: 30
                     radius: Theme.radiusSmall
                     color: cancelMouse.containsMouse ? Theme.bgHover : Theme.bgHeader
                     border.color: Theme.borderSubtle
@@ -125,7 +125,8 @@ Rectangle {
 
                     Text {
                         anchors.centerIn: parent
-                        text: "Cancel"
+                        id: nfCancelLabel
+                        text: qsTr("Cancel")
                         font.family: Theme.fontFamily
                         font.pixelSize: Theme.fontSizeSmall
                         color: Theme.textPrimary
@@ -142,14 +143,15 @@ Rectangle {
 
                 // Create Button
                 Rectangle {
-                    width: 90
-                    height: 30
+                    Layout.preferredWidth: Math.max(90, nfCreateLabel.implicitWidth + 24)
+                    Layout.preferredHeight: 30
                     radius: Theme.radiusSmall
                     color: okMouse.containsMouse ? Theme.accentHover : Theme.accent
 
                     Text {
                         anchors.centerIn: parent
-                        text: "Create"
+                        id: nfCreateLabel
+                        text: qsTr("Create")
                         font.family: Theme.fontFamily
                         font.pixelSize: Theme.fontSizeSmall
                         font.bold: true

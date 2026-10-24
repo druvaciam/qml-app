@@ -8,6 +8,7 @@
 #include <QAbstractNativeEventFilter>
 #include <QCoreApplication>
 #include <QClipboard>
+#include <QDrag>
 #include <QMimeData>
 #include <QUrl>
 
@@ -119,7 +120,7 @@ AppController::AppController(QObject *parent)
     // Operation errors go to the message dialog.
     connect(m_fileOps, &FileOperationsService::operationError, this,
             [this](const QString &error) {
-                emit showMessageRequested(QStringLiteral("Operation Failed"), error);
+                emit showMessageRequested(tr("Operation Failed"), error);
             });
 
     // Same dead-signal shape as operationError above: the model has always
@@ -130,11 +131,11 @@ AppController::AppController(QObject *parent)
     for (PanelController *panel : {m_leftPanel, m_rightPanel}) {
         connect(panel, &PanelController::navigationError, this,
                 [this](const QString &message) {
-                    emit showMessageRequested(QStringLiteral("Cannot Open Folder"), message);
+                    emit showMessageRequested(tr("Cannot Open Folder"), message);
                 });
         connect(panel->model(), &FileListModel::directoryLoadError, this,
                 [this](const QString &message) {
-                    emit showMessageRequested(QStringLiteral("Cannot Open Folder"), message);
+                    emit showMessageRequested(tr("Cannot Open Folder"), message);
                 });
     }
 
@@ -445,13 +446,13 @@ void AppController::copySelected(const QStringList &customPaths, const QString &
 {
     QStringList targets = !customPaths.isEmpty() ? customPaths : getActiveOrSelectedPaths();
     if (targets.isEmpty()) {
-        emit showMessageRequested(QStringLiteral("Copy"), QStringLiteral("No files or folders selected to copy."));
+        emit showMessageRequested(QStringLiteral("Copy"), tr("No files or folders selected to copy."));
         return;
     }
 
     QString dst = !customDestination.isEmpty() ? customDestination : targetPanel()->currentPath();
     if (dst.isEmpty()) {
-        emit showMessageRequested(QStringLiteral("Copy"), QStringLiteral("Destination folder is not specified."));
+        emit showMessageRequested(QStringLiteral("Copy"), tr("Destination folder is not specified."));
         return;
     }
 
@@ -462,18 +463,18 @@ void AppController::moveSelected(const QStringList &customPaths, const QString &
 {
     QStringList targets = !customPaths.isEmpty() ? customPaths : getActiveOrSelectedPaths();
     if (targets.isEmpty()) {
-        emit showMessageRequested(QStringLiteral("Move"), QStringLiteral("No files or folders selected to move."));
+        emit showMessageRequested(QStringLiteral("Move"), tr("No files or folders selected to move."));
         return;
     }
 
     QString dst = !customDestination.isEmpty() ? customDestination : targetPanel()->currentPath();
     if (dst.isEmpty()) {
-        emit showMessageRequested(QStringLiteral("Move"), QStringLiteral("Destination folder is not specified."));
+        emit showMessageRequested(QStringLiteral("Move"), tr("Destination folder is not specified."));
         return;
     }
 
     if (FileOperationsService::isSamePath(dst, activePanel()->currentPath())) {
-        emit showMessageRequested(QStringLiteral("Move"), QStringLiteral("Source and target folders are identical. Use F2 to rename."));
+        emit showMessageRequested(QStringLiteral("Move"), tr("Source and target folders are identical. Use F2 to rename."));
         return;
     }
 
@@ -484,7 +485,7 @@ void AppController::deleteSelected(const QStringList &customPaths, bool permanen
 {
     QStringList targets = !customPaths.isEmpty() ? customPaths : getActiveOrSelectedPaths();
     if (targets.isEmpty()) {
-        emit showMessageRequested(QStringLiteral("Delete"), QStringLiteral("No files or folders selected to delete."));
+        emit showMessageRequested(QStringLiteral("Delete"), tr("No files or folders selected to delete."));
         return;
     }
 
@@ -591,7 +592,7 @@ void AppController::onFileOperationCompleted(bool success, const QString &messag
     // Files changed; the set of drives did not.
     refreshPanels();
     if (!success && !message.isEmpty()) {
-        emit showMessageRequested(QStringLiteral("Operation Failed"), message);
+        emit showMessageRequested(tr("Operation Failed"), message);
     }
 }
 
@@ -606,6 +607,39 @@ void AppController::setDraggedPaths(const QStringList &paths)
 void AppController::clearDraggedPaths()
 {
     setDraggedPaths(QStringList());
+}
+
+void AppController::startExternalDrag(const QStringList &paths)
+{
+    if (paths.isEmpty() || m_externalDragRunning) {
+        return;
+    }
+
+    QList<QUrl> urls;
+    urls.reserve(paths.size());
+    for (const QString &path : paths) {
+        urls.append(QUrl::fromLocalFile(path));
+    }
+
+    auto *mime = new QMimeData;
+    // setUrls is what every other application reads: the Windows backend
+    // turns it into CF_HDROP, the format Explorer has used since 1995, and
+    // the X11 and Wayland backends into text/uri-list.
+    mime->setUrls(urls);
+
+    auto *drag = new QDrag(this);
+    drag->setMimeData(mime);
+
+    // Copy only, deliberately. A move out of this window would mean deleting
+    // the originals once the other application reports it took them, and
+    // getting that wrong deletes a person's files. Dropping into Explorer
+    // therefore copies, whichever drive it lands on.
+    m_externalDragRunning = true;
+    const Qt::DropAction done = drag->exec(Qt::CopyAction, Qt::CopyAction);
+    m_externalDragRunning = false;
+
+    qCInfo(lcOps).noquote() << "dragged" << paths.size() << "item(s) out of the window -"
+                            << (done == Qt::CopyAction ? "copied" : "not taken");
 }
 
 QStringList AppController::urlsToPaths(const QList<QUrl> &urls) const
