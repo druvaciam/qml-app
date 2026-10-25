@@ -100,7 +100,11 @@ try {
     if ($NoCache) { $buildArgs += "--no-cache" }
     Invoke-Checked "docker build" { docker @buildArgs }
 
-    $label = docker image inspect $Image --format '{{index .Config.Labels "qmlcommander.src_hash"}}'
+    # Read the labels as JSON and pick the key here. A --format template with a
+    # quoted key inside it loses its quotes on the way to docker, and the Go
+    # template then reads the key as a function name.
+    $labels = docker image inspect $Image --format "{{json .Config.Labels}}" | ConvertFrom-Json
+    $label = $labels."qmlcommander.src_hash"
     if ($label -ne $srcHash) { throw "image carries sources fingerprint '$label', expected '$srcHash' - the build did not run on this tree" }
     Write-Host ("  image created {0}, fingerprint matches" -f (docker image inspect $Image --format "{{.Created}}"))
 

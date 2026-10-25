@@ -76,6 +76,10 @@ qt_add_qml_module(appQmlCommander
         src/AppController.cpp
         src/Localization.h
         src/Localization.cpp
+        src/PdfDocument.h
+        src/PdfDocument.cpp
+        src/PdfImageProvider.h
+        src/PdfImageProvider.cpp
     QML_FILES
         qml/Main.qml
         qml/components/FilePanel.qml
@@ -89,6 +93,7 @@ qt_add_qml_module(appQmlCommander
         qml/components/ConfirmDeleteDialog.qml
         qml/components/ConflictDialog.qml
         qml/components/CopyMoveDialog.qml
+        qml/components/PdfViewPanel.qml
         ${QMLCOMMANDER_MEDIA_QML}
     RESOURCES
         resources/app_icon.png
@@ -121,6 +126,22 @@ qt_add_translations(appQmlCommander
     RESOURCE_PREFIX "/i18n"
     LUPDATE_OPTIONS -locations none
 )
+
+# PDFium draws the PDF previews. It is loaded at run time, so it is not
+# linked here - it only has to sit next to the executable.
+if(WIN32)
+    set(QMLCOMMANDER_PDFIUM "${CMAKE_CURRENT_SOURCE_DIR}/third_party/pdfium/pdfium.dll")
+else()
+    set(QMLCOMMANDER_PDFIUM "${CMAKE_CURRENT_SOURCE_DIR}/third_party/pdfium/libpdfium.so")
+endif()
+if(EXISTS "${QMLCOMMANDER_PDFIUM}")
+    add_custom_command(TARGET appQmlCommander POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${QMLCOMMANDER_PDFIUM}" "$<TARGET_FILE_DIR:appQmlCommander>"
+        COMMENT "Copying PDFium next to the executable")
+else()
+    message(STATUS "PDFium not present - PDF previews will be unavailable")
+endif()
 
 if(WIN32)
     add_compile_definitions(NOMINMAX)

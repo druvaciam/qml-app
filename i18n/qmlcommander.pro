@@ -10,6 +10,7 @@ SOURCES += ../src/AppController.cpp \
            ../src/FilePreviewService.cpp \
            ../src/PanelController.cpp \
            ../src/Localization.cpp \
+           ../src/PdfDocument.cpp \
            ../src/main.cpp
 
 lupdate_only {
@@ -24,6 +25,7 @@ SOURCES += ../qml/Main.qml \
            ../qml/components/FilePreviewDialog.qml \
            ../qml/components/FunctionBar.qml \
            ../qml/components/MediaPlayerPanel.qml \
+           ../qml/components/PdfViewPanel.qml \
            ../qml/components/NewFolderDialog.qml \
            ../qml/components/OperationProgressModal.qml
 }

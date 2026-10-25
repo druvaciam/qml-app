@@ -190,7 +190,7 @@ This cannot be undone.</source>
     <name>FileOperationsService</name>
     <message>
         <source>Failed to initialize Windows Shell FileOperation.</source>
-        <translation>Не ўдалося ініцыялізаваць Windows Shell FileOperation.</translation>
+        <translation>Немагчыма ініцыялізаваць Windows Shell FileOperation.</translation>
     </message>
     <message>
         <source>Invalid destination directory: %1</source>
@@ -302,7 +302,7 @@ This cannot be undone.</source>
     </message>
     <message>
         <source>%1 - and %2 more item(s) could not be deleted.</source>
-        <translation>%1 — і яшчэ %2 элемент(аў) не ўдалося выдаліць.</translation>
+        <translation>%1 — і яшчэ %2 элемент(аў) не выдалена.</translation>
     </message>
     <message>
         <source>Invalid folder name. It cannot be empty or contain \ or /.</source>
@@ -322,7 +322,7 @@ This cannot be undone.</source>
     </message>
     <message>
         <source>Could not create "%1" here (permission denied or the name is not allowed).</source>
-        <translation>Не ўдалося стварыць «%1» тут (няма правоў або назва не дазволена).</translation>
+        <translation>Немагчыма стварыць «%1» тут (няма правоў або назва не дазволена).</translation>
     </message>
     <message>
         <source>Invalid name. It cannot be empty or contain \ or /.</source>
@@ -440,11 +440,11 @@ This cannot be undone.</source>
     </message>
     <message>
         <source>Binary File</source>
-        <translation>Двайковы файл</translation>
+        <translation>Прагляд недаступны</translation>
     </message>
     <message>
         <source>Binary or unsupported preview format.</source>
-        <translation>Двайковы файл або фармат, які не падтрымліваецца.</translation>
+        <translation>Гэты файл нельга паказаць тут. Адкрыйце яго сістэмнай праграмай.</translation>
     </message>
     <message>
         <source>Open with System App</source>
@@ -457,6 +457,14 @@ This cannot be undone.</source>
     <message>
         <source>💾 Save (Ctrl+S)</source>
         <translation>💾 Захаваць (Ctrl+S)</translation>
+    </message>
+    <message>
+        <source>PDF viewing is not available in this build.</source>
+        <translation>Прагляд PDF недаступны ў гэтай зборцы.</translation>
+    </message>
+    <message>
+        <source>The PDFium library was not found next to the application. Press F3 or use Open to read the file in the system viewer.</source>
+        <translation>Бібліятэка PDFium не знойдзена поруч з праграмай. Націсніце F3 або скарыстайце «Адкрыць», каб прачытаць файл сістэмнай праграмай.</translation>
     </message>
 </context>
 <context>
@@ -479,7 +487,7 @@ This cannot be undone.</source>
     </message>
     <message>
         <source>[Binary File - Preview Not Available]</source>
-        <translation>[Двайковы файл — прагляд недаступны]</translation>
+        <translation>[Прагляд гэтага файла недаступны]</translation>
     </message>
 </context>
 <context>
@@ -646,6 +654,48 @@ This cannot be undone.</source>
     <message>
         <source>Cannot open '%1'. The folder does not exist, or is not reachable (a removable drive may have been unplugged).</source>
         <translation>Немагчыма адкрыць «%1». Тэчка не існуе або недаступная (здымны дыск мог быць адключаны).</translation>
+    </message>
+</context>
+<context>
+    <name>PdfDocument</name>
+    <message>
+        <source>This file could not be read.</source>
+        <translation>Немагчыма прачытаць гэты файл.</translation>
+    </message>
+    <message>
+        <source>This file is not a PDF, or it is damaged.</source>
+        <translation>Гэта не PDF або файл пашкоджаны.</translation>
+    </message>
+    <message>
+        <source>This PDF is damaged.</source>
+        <translation>Гэты PDF пашкоджаны.</translation>
+    </message>
+    <message>
+        <source>This PDF needs a password.</source>
+        <translation>Для гэтага PDF патрэбны пароль.</translation>
+    </message>
+    <message>
+        <source>This PDF uses an unsupported security scheme.</source>
+        <translation>Гэты PDF выкарыстоўвае абарону, якая не падтрымліваецца.</translation>
+    </message>
+    <message>
+        <source>This PDF could not be opened.</source>
+        <translation>Немагчыма адкрыць гэты PDF.</translation>
+    </message>
+    <message>
+        <source>PDF viewing is not available in this build.</source>
+        <translation>Прагляд PDF недаступны ў гэтай зборцы.</translation>
+    </message>
+</context>
+<context>
+    <name>PdfViewPanel</name>
+    <message>
+        <source>Fit</source>
+        <translation>Па шырыні</translation>
+    </message>
+    <message>
+        <source>Page:</source>
+        <translation>Старонка:</translation>
     </message>
 </context>
 </TS>

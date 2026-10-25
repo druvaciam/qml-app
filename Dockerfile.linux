@@ -39,6 +39,7 @@ COPY src/ ./src/
 COPY qml/ ./qml/
 COPY resources/ ./resources/
 COPY i18n/ ./i18n/
+COPY third_party/ ./third_party/
 
 # 3. Configure & compile in Release mode
 RUN cmake -B build-release -G Ninja -DCMAKE_BUILD_TYPE=Release \
@@ -48,6 +49,7 @@ RUN cmake -B build-release -G Ninja -DCMAKE_BUILD_TYPE=Release \
 RUN mkdir -p /app/dist-linux/bin \
     && cp build-release/appQmlCommander /app/dist-linux/bin/ \
     && cp -r build-release/QmlCommander /app/dist-linux/bin/ \
+    && cp third_party/pdfium/libpdfium.so /app/dist-linux/bin/ \
     && cp resources/app_icon.png /app/dist-linux/ \
     && tar -czvf /app/QmlCommander-Linux-x64.tar.gz -C /app/dist-linux .
 

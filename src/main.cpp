@@ -16,6 +16,7 @@
 
 #include "Logging.h"
 #include "Localization.h"
+#include "PdfImageProvider.h"
 
 namespace {
 
@@ -207,6 +208,11 @@ int main(int argc, char *argv[])
     Localization::instance();
 
     QQmlApplicationEngine engine;
+
+    // Serves rendered PDF pages to any Image whose source starts with
+    // "image://pdfpage/". The engine takes ownership.
+    engine.addImageProvider(QStringLiteral("pdfpage"), new PdfImageProvider);
+
     engine.addImportPath(QStringLiteral("qrc:/"));
     engine.addImportPath(QStringLiteral("qrc:/qt/qml"));
 

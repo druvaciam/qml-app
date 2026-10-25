@@ -18,6 +18,11 @@ public:
     Q_PROPERTY(bool mediaSupported READ mediaSupported CONSTANT)
     static bool mediaSupported();
 
+    /// True when PDFium could be loaded. Like mediaSupported above: the
+    /// interface only offers a PDF view when something can actually draw one.
+    Q_PROPERTY(bool pdfSupported READ pdfSupported CONSTANT)
+    static bool pdfSupported();
+
     Q_INVOKABLE QVariantMap loadPreview(const QString &filePath, int maxBytes = 256 * 1024);
     Q_INVOKABLE bool saveTextFile(const QString &filePath, const QString &content);
     Q_INVOKABLE bool openInDefaultApp(const QString &filePath);

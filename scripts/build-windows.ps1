@@ -90,6 +90,11 @@ try {
         New-Item -ItemType Directory -Force $t.Dist | Out-Null
         Copy-Item "$($t.Build)\appQmlCommander.exe" "$($t.Dist)\appQmlCommander.exe" -Force
         Copy-Item "resources\app_icon.png" "$($t.Dist)\app_icon.png" -Force
+        # PDFium draws the PDF previews and is loaded by name at run time, so
+        # it has to sit next to the executable rather than be linked.
+        if (Test-Path "third_party\pdfium\pdfium.dll") {
+            Copy-Item "third_party\pdfium\pdfium.dll" "$($t.Dist)\pdfium.dll" -Force
+        }
 
         if (-not $SkipDeploy) {
             Write-Host "  windeployqt"

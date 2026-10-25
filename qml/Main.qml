@@ -19,6 +19,11 @@ ApplicationWindow {
     title: qsTr("QML Commander - Dual-Pane File Manager")
     color: Theme.bgApp
 
+    /// How wide the strip along each window edge is that resizes the window.
+    /// The preview card keeps this far inside, so its own edges stay
+    /// reachable next to it rather than underneath it.
+    readonly property int resizeBorder: 6
+
     Timer {
         id: saveGeometryTimer
         interval: 600
@@ -751,6 +756,7 @@ ApplicationWindow {
     FilePreviewDialog {
         id: previewDialog
         previewService: appCtrl.preview
+        edgeInset: resizeHandles.visible ? window.resizeBorder : 0
         onClosed: restoreActiveFocus()
     }
 
@@ -1163,7 +1169,7 @@ ApplicationWindow {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: parent.top
-            height: 6
+            height: window.resizeBorder
             cursorShape: Qt.SizeVerCursor
             onPressed: window.startSystemResize(Qt.TopEdge)
         }
@@ -1171,7 +1177,7 @@ ApplicationWindow {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.bottom: parent.bottom
-            height: 6
+            height: window.resizeBorder
             cursorShape: Qt.SizeVerCursor
             onPressed: window.startSystemResize(Qt.BottomEdge)
         }
@@ -1179,7 +1185,7 @@ ApplicationWindow {
             anchors.left: parent.left
             anchors.top: parent.top
             anchors.bottom: parent.bottom
-            width: 6
+            width: window.resizeBorder
             cursorShape: Qt.SizeHorCursor
             onPressed: window.startSystemResize(Qt.LeftEdge)
         }
@@ -1187,7 +1193,7 @@ ApplicationWindow {
             anchors.right: parent.right
             anchors.top: parent.top
             anchors.bottom: parent.bottom
-            width: 6
+            width: window.resizeBorder
             cursorShape: Qt.SizeHorCursor
             onPressed: window.startSystemResize(Qt.RightEdge)
         }
@@ -1196,32 +1202,32 @@ ApplicationWindow {
         MouseArea {
             anchors.left: parent.left
             anchors.top: parent.top
-            width: 12
-            height: 12
+            width: window.resizeBorder * 2
+            height: window.resizeBorder * 2
             cursorShape: Qt.SizeFDiagCursor
             onPressed: window.startSystemResize(Qt.TopEdge | Qt.LeftEdge)
         }
         MouseArea {
             anchors.right: parent.right
             anchors.top: parent.top
-            width: 12
-            height: 12
+            width: window.resizeBorder * 2
+            height: window.resizeBorder * 2
             cursorShape: Qt.SizeBDiagCursor
             onPressed: window.startSystemResize(Qt.TopEdge | Qt.RightEdge)
         }
         MouseArea {
             anchors.left: parent.left
             anchors.bottom: parent.bottom
-            width: 12
-            height: 12
+            width: window.resizeBorder * 2
+            height: window.resizeBorder * 2
             cursorShape: Qt.SizeBDiagCursor
             onPressed: window.startSystemResize(Qt.BottomEdge | Qt.LeftEdge)
         }
         MouseArea {
             anchors.right: parent.right
             anchors.bottom: parent.bottom
-            width: 12
-            height: 12
+            width: window.resizeBorder * 2
+            height: window.resizeBorder * 2
             cursorShape: Qt.SizeFDiagCursor
             onPressed: window.startSystemResize(Qt.BottomEdge | Qt.RightEdge)
         }

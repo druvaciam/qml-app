@@ -34,6 +34,46 @@ Rectangle {
     property string saveError: ""
     property string saveNotice: ""
 
+    /// Where the user has dragged the card's edges to, in this dialog's
+    /// coordinates. Empty until the first drag: until then the card sits
+    /// centred at its default size. Kept for the rest of the session, so the
+    /// next file opens at the size the last one was left at.
+    property rect cardRect: Qt.rect(0, 0, 0, 0)
+    /// How far inside the window the card's edges must stay. The window's own
+    /// resize strip runs along its edges above everything, so a card pressed
+    /// right up against an edge could not be grabbed there.
+    property int edgeInset: 0
+    readonly property int cardMinWidth: 420
+    readonly property int cardMinHeight: 300
+    property rect resizeStart
+
+    function beginCardResize() {
+        resizeStart = Qt.rect(card.x, card.y, card.width, card.height)
+    }
+
+    /// Moves only the edges being dragged, as a window does: the opposite
+    /// edge stays where it is. Never smaller than the minimum, never outside
+    /// the application window.
+    function resizeCard(edges, dx, dy) {
+        let left = resizeStart.x
+        let top = resizeStart.y
+        let right = resizeStart.x + resizeStart.width
+        let bottom = resizeStart.y + resizeStart.height
+        if (edges & Qt.LeftEdge) {
+            left = Math.max(edgeInset, Math.min(left + dx, right - cardMinWidth))
+        }
+        if (edges & Qt.RightEdge) {
+            right = Math.min(root.width - edgeInset, Math.max(right + dx, left + cardMinWidth))
+        }
+        if (edges & Qt.TopEdge) {
+            top = Math.max(edgeInset, Math.min(top + dy, bottom - cardMinHeight))
+        }
+        if (edges & Qt.BottomEdge) {
+            bottom = Math.min(root.height - edgeInset, Math.max(bottom + dy, top + cardMinHeight))
+        }
+        cardRect = Qt.rect(left, top, right - left, bottom - top)
+    }
+
     visible: isOpen
     anchors.fill: parent
     color: "#b0000000"
@@ -219,7 +259,9 @@ Rectangle {
     // has always worked reliably here.
     Shortcut {
         sequences: [StandardKey.Cancel]   // Escape
-        enabled: root.isOpen
+        // Typing a page number, Escape belongs to the field: it cancels the
+        // number, not the whole preview.
+        enabled: root.isOpen && !pdfPanel.editingPage
         onActivated: {
             // Escape leaves the enlarged view first and closes the window only
             // when it is already at its normal size, so the key never throws
@@ -253,14 +295,37 @@ Rectangle {
         onClicked: {} // Block underlying clicks
     }
 
+    // The wheel needs the same blanket accept as the keys: a MouseArea does not
+    // take wheel events, and a view inside the dialog that has run out of room
+    // passes the turn on, which would scroll the file list behind. The dialog's
+    // own contents are in front of this, so they still take theirs first.
+    WheelHandler {
+        blocking: true
+        onWheel: root.userActive()
+    }
+
     Rectangle {
+        id: card
         objectName: "previewCard"
+        readonly property bool userSized: root.cardRect.width > 0
         // Enlarged, the card takes the whole window; the rounded corners and
         // the border go with it, since there is no longer anything behind it
-        // for them to sit against.
-        width: root.expanded ? parent.width : Math.min(parent.width - 60, 960)
-        height: root.expanded ? parent.height : Math.min(parent.height - 60, 680)
-        anchors.centerIn: parent
+        // for them to sit against. Otherwise it is the size the user dragged
+        // it to, held inside the window if the window has since shrunk.
+        width: root.expanded ? root.width
+             : userSized ? Math.min(root.cardRect.width, root.width - 2 * root.edgeInset)
+                         : Math.min(root.width - 60, 960)
+        height: root.expanded ? root.height
+              : userSized ? Math.min(root.cardRect.height, root.height - 2 * root.edgeInset)
+                          : Math.min(root.height - 60, 680)
+        x: root.expanded ? 0
+         : userSized ? Math.max(root.edgeInset,
+                                Math.min(root.cardRect.x, root.width - root.edgeInset - width))
+                     : (root.width - width) / 2
+        y: root.expanded ? 0
+         : userSized ? Math.max(root.edgeInset,
+                                Math.min(root.cardRect.y, root.height - root.edgeInset - height))
+                     : (root.height - height) / 2
         radius: root.expanded ? 0 : Theme.radiusLarge
         // Immersive: black to the edges, so the letterbox bars around the
         // picture are the same colour as the picture's own background.
@@ -525,6 +590,49 @@ Rectangle {
                     }
                 }
 
+                // 3. PDF. A plain component rather than a Loader: it has
+                // no optional import, and PDFium is looked for at run time.
+                PdfViewPanel {
+                    id: pdfPanel
+                    objectName: "pdfPanel"
+                    anchors.fill: parent
+                    visible: !!(root.fileData && root.fileData.isPdf) && previewService.pdfSupported
+                    filePath: visible ? root.filePath : ""
+                    onPageEntryFinished: root.forceActiveFocus()
+                }
+
+                // Said when the file is a PDF but nothing can draw it.
+                ColumnLayout {
+                    anchors.centerIn: parent
+                    width: parent.width - 60
+                    spacing: 10
+                    visible: !!(root.fileData && root.fileData.isPdf) && !previewService.pdfSupported
+
+                    Text {
+                        Layout.alignment: Qt.AlignHCenter
+                        text: "📕"
+                        font.pixelSize: 48
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        horizontalAlignment: Text.AlignHCenter
+                        wrapMode: Text.Wrap
+                        text: qsTr("PDF viewing is not available in this build.")
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.fontSizeBase
+                        color: Theme.textPrimary
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        horizontalAlignment: Text.AlignHCenter
+                        wrapMode: Text.Wrap
+                        text: qsTr("The PDFium library was not found next to the application. Press F3 or use Open to read the file in the system viewer.")
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.fontSizeSmall
+                        color: Theme.textSecondary
+                    }
+                }
+
                 // Shown in place of the player when the build has no Qt
                 // Multimedia, so the window explains itself instead of
                 // appearing broken.
@@ -602,7 +710,8 @@ Rectangle {
                     // Audio and video have their own section above. Without
                     // excluding them here, this drew on top of a playing video.
                     visible: Boolean(!root.fileData?.isText && !root.fileData?.isImage
-                                     && !root.fileData?.isAudio && !root.fileData?.isVideo)
+                                     && !root.fileData?.isAudio && !root.fileData?.isVideo
+                                     && !root.fileData?.isPdf)
                     spacing: 12
 
                     Text {
@@ -633,12 +742,13 @@ Rectangle {
 
                     Rectangle {
                         Layout.alignment: Qt.AlignHCenter
-                        width: 160
-                        height: 36
+                        Layout.preferredWidth: Math.max(160, openExtLabel.implicitWidth + 28)
+                        Layout.preferredHeight: 36
                         radius: Theme.radiusSmall
                         color: openExtMouse.containsMouse ? Theme.accentHover : Theme.accent
 
                         Text {
+                            id: openExtLabel
                             anchors.centerIn: parent
                             text: qsTr("Open with System App")
                             font.family: Theme.fontFamily
@@ -784,6 +894,64 @@ Rectangle {
                 }
             }
         }
+
+        // ---- the edges and corners, which resize it as on any window ----
+        Item {
+            id: grips
+            objectName: "resizeGrips"
+            anchors.fill: parent
+            visible: !root.expanded
+            readonly property int edge: 6
+            readonly property int corner: 14
+
+            Repeater {
+                model: [
+                    { edges: Qt.LeftEdge, cursor: Qt.SizeHorCursor },
+                    { edges: Qt.RightEdge, cursor: Qt.SizeHorCursor },
+                    { edges: Qt.TopEdge, cursor: Qt.SizeVerCursor },
+                    { edges: Qt.BottomEdge, cursor: Qt.SizeVerCursor },
+                    { edges: Qt.TopEdge | Qt.LeftEdge, cursor: Qt.SizeFDiagCursor },
+                    { edges: Qt.BottomEdge | Qt.RightEdge, cursor: Qt.SizeFDiagCursor },
+                    { edges: Qt.TopEdge | Qt.RightEdge, cursor: Qt.SizeBDiagCursor },
+                    { edges: Qt.BottomEdge | Qt.LeftEdge, cursor: Qt.SizeBDiagCursor }
+                ]
+
+                delegate: MouseArea {
+                    required property var modelData
+                    readonly property int edges: modelData.edges
+                    readonly property bool sideways: !!(edges & (Qt.LeftEdge | Qt.RightEdge))
+                    readonly property bool upright: !!(edges & (Qt.TopEdge | Qt.BottomEdge))
+                    property point pressedAt
+
+                    objectName: "grip" + edges
+                    // A corner is a square; a side runs between two corners.
+                    width: sideways ? (upright ? grips.corner : grips.edge)
+                                    : grips.width - 2 * grips.corner
+                    height: upright ? (sideways ? grips.corner : grips.edge)
+                                    : grips.height - 2 * grips.corner
+                    x: (edges & Qt.LeftEdge) ? 0
+                     : (edges & Qt.RightEdge) ? grips.width - width : grips.corner
+                    y: (edges & Qt.TopEdge) ? 0
+                     : (edges & Qt.BottomEdge) ? grips.height - height : grips.corner
+                    cursorShape: modelData.cursor
+                    hoverEnabled: true
+                    preventStealing: true
+
+                    // Scene coordinates: the grip moves as the card grows, so
+                    // a position measured against the grip itself would drift.
+                    onPressed: (mouse) => {
+                        pressedAt = mapToItem(null, mouse.x, mouse.y)
+                        root.beginCardResize()
+                    }
+                    onPositionChanged: (mouse) => {
+                        if (pressed) {
+                            const p = mapToItem(null, mouse.x, mouse.y)
+                            root.resizeCard(edges, p.x - pressedAt.x, p.y - pressedAt.y)
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // Consume anything the editor did not take, so keys cannot reach the file
@@ -810,6 +978,29 @@ Rectangle {
             event.accepted = true
             return
         }
+        if (pdfPanel.visible) {
+            if (event.key === Qt.Key_PageDown || event.key === Qt.Key_Space) {
+                pdfPanel.pageDown(); event.accepted = true; return
+            }
+            if (event.key === Qt.Key_PageUp) { pdfPanel.pageUp(); event.accepted = true; return }
+            // Held down, these repeat on their own: Keys.onPressed sees the
+            // auto-repeats, so the view creeps along for as long as the key is
+            // down.
+            if (event.key === Qt.Key_Down) { pdfPanel.lineDown(); event.accepted = true; return }
+            if (event.key === Qt.Key_Up) { pdfPanel.lineUp(); event.accepted = true; return }
+            if (event.key === Qt.Key_Left) { pdfPanel.lineLeft(); event.accepted = true; return }
+            if (event.key === Qt.Key_Right) { pdfPanel.lineRight(); event.accepted = true; return }
+            if (event.key === Qt.Key_Home) { pdfPanel.toStart(); event.accepted = true; return }
+            if (event.key === Qt.Key_End) { pdfPanel.toEnd(); event.accepted = true; return }
+            if (event.modifiers & Qt.ControlModifier) {
+                if (event.key === Qt.Key_Plus || event.key === Qt.Key_Equal) {
+                    pdfPanel.zoomBy(1.25); event.accepted = true; return
+                }
+                if (event.key === Qt.Key_Minus) { pdfPanel.zoomBy(1 / 1.25); event.accepted = true; return }
+                if (event.key === Qt.Key_0) { pdfPanel.zoom = 1.0; event.accepted = true; return }
+            }
+        }
+
         if (event.key === Qt.Key_Space && mediaLoader.item) {
             mediaLoader.item.togglePlay()
             event.accepted = true

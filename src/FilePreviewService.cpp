@@ -1,4 +1,5 @@
 #include "FilePreviewService.h"
+#include "PdfDocument.h"
 #include "DriveInfo.h"
 #include <QDesktopServices>
 #include <QDir>
@@ -31,6 +32,13 @@ bool FilePreviewService::mediaSupported()
 #else
     return false;
 #endif
+}
+
+bool FilePreviewService::pdfSupported()
+{
+    // Decided at run time, not at build time: the library is loaded when it
+    // is first needed, and may simply not be next to the executable.
+    return PdfDocument::isAvailable();
 }
 
 QVariantMap FilePreviewService::loadPreview(const QString &filePath, int maxBytes)
@@ -70,10 +78,21 @@ QVariantMap FilePreviewService::loadPreview(const QString &filePath, int maxByte
                          ext == "mp4" || ext == "mkv" || ext == "avi" || ext == "mov" ||
                          ext == "webm" || ext == "wmv" || ext == "m4v" || ext == "mpg" ||
                          ext == "mpeg";
+    const bool isPdf = mime.name() == QStringLiteral("application/pdf") || ext == "pdf";
 
     result["isImage"] = isImage;
     result["isAudio"] = isAudio && !isImage;
     result["isVideo"] = isVideo && !isImage;
+    result["isPdf"] = isPdf;
+
+    if (isPdf) {
+        // Not read here either: the pages are drawn one at a time, at the
+        // size they are shown, so a 400 page document costs one page.
+        result["isText"] = false;
+        result["content"] = QString();
+        result["fileUrl"] = QUrl::fromLocalFile(filePath).toString();
+        return result;
+    }
 
     if (isAudio || isVideo) {
         // Nothing is read here. The player is handed the path and streams it
