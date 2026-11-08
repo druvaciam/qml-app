@@ -16,8 +16,11 @@ Item {
 
     /// Set by the preview window; opening a new file reloads everything.
     property string filePath: ""
-    // A page typed for one document means nothing in the next.
-    onFilePathChanged: pageField.clear()
+    // A page typed, or text selected, in one document means nothing in the next.
+    onFilePathChanged: {
+        pageField.clear()
+        clearSelection()
+    }
 
     /// How much of the available width one page takes. The buttons change it.
     property real zoom: 1.0
@@ -36,13 +39,88 @@ Item {
     /// view and pulls the view back to it when a page finishes loading.
     property int currentPage: 1
 
-    /// The page number is being typed. Escape then cancels the typing rather
-    /// than closing the preview.
-    readonly property bool editingPage: pageField.activeFocus
+    /// A number is being typed into the bar, a page or a zoom. Escape then
+    /// cancels the typing rather than closing the preview.
+    readonly property bool typingInBar: pageField.activeFocus || zoomField.activeFocus
 
-    /// Enter or Escape in the page number: the keyboard goes back to whoever
-    /// had it, so Page Down and the arrows work again straight away.
-    signal pageEntryFinished()
+    /// Enter or Escape in one of the bar's fields: the keyboard goes back to
+    /// whoever had it, so Page Down and the arrows work again straight away.
+    signal barEntryFinished()
+
+    // ---- selected text ----
+    // Where the drag started and where it has got to, each a page and a
+    // character on it. A drag can go backwards, so these are not in reading
+    // order; selectionOn() puts them in it.
+    property int anchorPage: -1
+    property int anchorChar: -1
+    property int focusPage: -1
+    property int focusChar: -1
+    readonly property bool hasSelection: anchorPage >= 0 && focusPage >= 0
+
+    function select(fromPage, fromChar, toPage, toChar) {
+        anchorPage = fromPage
+        anchorChar = fromChar
+        focusPage = toPage
+        focusChar = toChar
+    }
+
+    function clearSelection() {
+        select(-1, -1, -1, -1)
+    }
+
+    /// The characters selected on one page, as [from, to], or null.
+    function selectionOn(page) {
+        if (!hasSelection) {
+            return null
+        }
+        const forward = anchorPage < focusPage
+                        || (anchorPage === focusPage && anchorChar <= focusChar)
+        const startPage = forward ? anchorPage : focusPage
+        const startChar = forward ? anchorChar : focusChar
+        const endPage = forward ? focusPage : anchorPage
+        const endChar = forward ? focusChar : anchorChar
+        if (page < startPage || page > endPage) {
+            return null
+        }
+        const from = page === startPage ? startChar : 0
+        const to = page === endPage ? endChar : doc.charCount(page) - 1
+        return to >= from ? [from, to] : null
+    }
+
+    function selectedText() {
+        let parts = []
+        for (let page = Math.min(anchorPage, focusPage);
+             hasSelection && page <= Math.max(anchorPage, focusPage); ++page) {
+            const part = selectionOn(page)
+            if (part) {
+                parts.push(doc.text(page, part[0], part[1]))
+            }
+        }
+        return parts.join("\n")
+    }
+
+    /// False when there was nothing to copy, so the key can go elsewhere.
+    function copySelection() {
+        const text = selectedText()
+        if (text === "") {
+            return false
+        }
+        doc.copyToClipboard(text)
+        return true
+    }
+
+    /// The page and character under a point in the list's content, for a drag
+    /// that has left the page it started on. Null in the gap between pages.
+    function charAtContent(x, y) {
+        const index = pages.indexAt(Math.max(0, Math.min(x, pages.contentWidth - 1)), y)
+        const item = index >= 0 ? pages.itemAtIndex(index) : null
+        if (!item) {
+            return null
+        }
+        const p = item.paper.mapFromItem(pages.contentItem, x, y)
+        const c = doc.charAt(index, p.x / item.paper.width, p.y / item.paper.height)
+        return c >= 0 ? { page: index, char: c } : null
+    }
 
     PdfDocument {
         id: doc
@@ -194,8 +272,12 @@ Item {
                     readonly property real aspect: doc.pageAspect(index) > 0 ? doc.pageAspect(index) : 0.7071
                     readonly property int pageWidth: Math.round((pages.width - 24) * root.zoom)
                     height: Math.round(pageWidth / aspect) + 8
+                    /// The page itself, without the gap around it: what a
+                    /// position on the page is measured against.
+                    readonly property Item paper: paperRect
 
                     Rectangle {
+                        id: paperRect
                         width: pageItem.pageWidth
                         height: pageItem.height - 8
                         anchors.horizontalCenter: parent.horizontalCenter
@@ -226,6 +308,71 @@ Item {
                             anchors.centerIn: parent
                             running: pageImage.status === Image.Loading
                             visible: running
+                        }
+
+                        // This page's share of the selection.
+                        Repeater {
+                            model: {
+                                const part = root.selectionOn(pageItem.index)
+                                return part ? doc.textRects(pageItem.index, part[0], part[1]) : []
+                            }
+                            delegate: Rectangle {
+                                required property var modelData
+                                objectName: "selectionRect"
+                                x: modelData.x * paperRect.width
+                                y: modelData.y * paperRect.height
+                                width: modelData.width * paperRect.width
+                                height: modelData.height * paperRect.height
+                                color: Theme.accent
+                                opacity: 0.35
+                            }
+                        }
+
+                        // A drag over the text selects it, as in any reader.
+                        MouseArea {
+                            id: selector
+                            anchors.fill: parent
+                            enabled: doc.textSelectable
+                            cursorShape: Qt.IBeamCursor
+                            // Otherwise the list takes the drag as a scroll. The
+                            // wheel and the scroll bars still scroll.
+                            preventStealing: true
+                            property point pressedAt
+                            property int pressedChar: -1
+                            property bool dragging: false
+
+                            onPressed: (mouse) => {
+                                // A page number half typed is abandoned, so the
+                                // keyboard is back with the preview for Ctrl+C.
+                                if (root.typingInBar) {
+                                    root.barEntryFinished()
+                                }
+                                pressedAt = Qt.point(mouse.x, mouse.y)
+                                dragging = false
+                                pressedChar = doc.charAt(pageItem.index, mouse.x / width,
+                                                         mouse.y / height)
+                            }
+                            onPositionChanged: (mouse) => {
+                                if (!dragging && Math.abs(mouse.x - pressedAt.x)
+                                                 + Math.abs(mouse.y - pressedAt.y) < 4) {
+                                    return
+                                }
+                                dragging = true
+                                if (pressedChar < 0) {
+                                    return
+                                }
+                                const p = mapToItem(pages.contentItem, mouse.x, mouse.y)
+                                const hit = root.charAtContent(p.x, p.y)
+                                if (hit) {
+                                    root.select(pageItem.index, pressedChar, hit.page, hit.char)
+                                }
+                            }
+                            // A click without a drag clears the selection.
+                            onReleased: {
+                                if (!dragging) {
+                                    root.clearSelection()
+                                }
+                            }
                         }
                     }
 
@@ -314,12 +461,12 @@ Item {
                         if (!isNaN(number)) {
                             root.goToPage(number)
                         }
-                        root.pageEntryFinished()
+                        root.barEntryFinished()
                     }
                     // Escape puts back what was there and leaves the field.
                     Keys.onEscapePressed: {
                         text = beforeEdit
-                        root.pageEntryFinished()
+                        root.barEntryFinished()
                     }
                 }
 
@@ -379,13 +526,52 @@ Item {
 
             BarButton { label: "−"; onClicked: root.zoomBy(1 / 1.25) }
 
-            Text {
+            // The zoom as a percentage. It follows the buttons and Ctrl+wheel;
+            // type a number and Enter sets it.
+            TextField {
+                id: zoomField
+                objectName: "pdfZoomField"
                 text: Math.round(root.zoom * 100) + "%"
+                Layout.preferredWidth: 54
+                Layout.preferredHeight: 22
+                padding: 0
+                leftPadding: 4
+                rightPadding: 4
+                horizontalAlignment: TextInput.AlignHCenter
+                verticalAlignment: TextInput.AlignVCenter
                 font.family: Theme.fontMono
                 font.pixelSize: Theme.fontSizeSmall
-                color: Theme.textSecondary
-                Layout.preferredWidth: 42
-                horizontalAlignment: Text.AlignHCenter
+                color: Theme.textPrimary
+                selectionColor: Theme.accent
+                selectByMouse: true
+                // Digits, and the % sign it shows, which may be left in.
+                validator: RegularExpressionValidator { regularExpression: /[0-9]{0,3}%?/ }
+
+                background: Rectangle {
+                    radius: Theme.radiusSmall
+                    color: Theme.bgInput
+                    border.color: zoomField.activeFocus ? Theme.accent : Theme.borderSubtle
+                    border.width: 1
+                }
+
+                // Typing replaces the binding; leaving the field puts it back,
+                // so it shows the zoom in force whether or not the number was
+                // used, and Escape needs nothing more than leaving.
+                onActiveFocusChanged: {
+                    if (activeFocus) {
+                        selectAll()
+                    } else {
+                        text = Qt.binding(() => Math.round(root.zoom * 100) + "%")
+                    }
+                }
+                onAccepted: {
+                    const percent = parseInt(text)
+                    if (!isNaN(percent)) {
+                        root.zoom = Math.max(root.minZoom, Math.min(root.maxZoom, percent / 100))
+                    }
+                    root.barEntryFinished()
+                }
+                Keys.onEscapePressed: root.barEntryFinished()
             }
 
             BarButton { label: "+"; onClicked: root.zoomBy(1.25) }

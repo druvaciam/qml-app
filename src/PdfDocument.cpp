@@ -1,21 +1,30 @@
 #include "PdfDocument.h"
 #include "Logging.h"
 
+#include <QClipboard>
 #include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
+#include <QGuiApplication>
 #include <QLibrary>
 #include <QMutexLocker>
 #include <QRecursiveMutex>
+
+#include <limits>
+#include <vector>
 
 namespace {
 
 using FPDF_DOCUMENT = void *;
 using FPDF_PAGE = void *;
 using FPDF_BITMAP = void *;
+using FPDF_TEXTPAGE = void *;
 
 constexpr int kBitmapBGRA = 4;     // FPDFBitmap_BGRA, from fpdfview.h
 constexpr int kRenderAnnot = 0x01; // FPDF_ANNOT: draw the annotations too
+/// FPDF_PageToDevice answers in whole units of a device this many across, so
+/// this is how finely a position on the page is known.
+constexpr int kDeviceUnits = 100000;
 
 /// The few entry points this needs, resolved once from the library.
 struct Pdfium
@@ -35,8 +44,21 @@ struct Pdfium
     void (*RenderPageBitmap)(FPDF_BITMAP bmp, FPDF_PAGE page, int x, int y,
                              int w, int h, int rotate, int flags) = nullptr;
     unsigned long (*GetLastError)() = nullptr;
+    int (*PageToDevice)(FPDF_PAGE page, int startX, int startY, int sizeX, int sizeY, int rotate,
+                        double pageX, double pageY, int *deviceX, int *deviceY) = nullptr;
+
+    FPDF_TEXTPAGE (*TextLoadPage)(FPDF_PAGE page) = nullptr;
+    void (*TextClosePage)(FPDF_TEXTPAGE text) = nullptr;
+    int (*TextCountChars)(FPDF_TEXTPAGE text) = nullptr;
+    // Left, right, bottom, top: PDFium's order, not the usual one.
+    int (*TextGetCharBox)(FPDF_TEXTPAGE text, int index,
+                          double *left, double *right, double *bottom, double *top) = nullptr;
+    int (*TextGetText)(FPDF_TEXTPAGE text, int start, int count, unsigned short *result) = nullptr;
 
     bool ok = false;
+    /// Pages can still be shown without these; their text just cannot be
+    /// selected.
+    bool textOk = false;
 };
 
 /// Looked up once. The library sits next to the executable in a packaged
@@ -95,6 +117,16 @@ const Pdfium &pdfium()
             return p;
         }
 
+        p.textOk = bind(lib, p.PageToDevice, "FPDF_PageToDevice")
+                && bind(lib, p.TextLoadPage, "FPDFText_LoadPage")
+                && bind(lib, p.TextClosePage, "FPDFText_ClosePage")
+                && bind(lib, p.TextCountChars, "FPDFText_CountChars")
+                && bind(lib, p.TextGetCharBox, "FPDFText_GetCharBox")
+                && bind(lib, p.TextGetText, "FPDFText_GetText");
+        if (!p.textOk) {
+            qCInfo(lcApp) << "PDFium has no text functions - PDF text will not be selectable";
+        }
+
         p.InitLibrary();
         qCInfo(lcApp).noquote() << "PDFium ready:" << QFileInfo(lib.fileName()).fileName();
         return p;
@@ -145,6 +177,7 @@ bool PdfDocument::isAvailable()
 void PdfDocument::close()
 {
     QMutexLocker locked(&pdfiumLock());
+    closeText();
     if (m_doc) {
         pdfium().CloseDocument(m_doc);
         m_doc = nullptr;
@@ -240,4 +273,176 @@ QImage PdfDocument::renderPage(int index, int width) const
     pdfium().BitmapDestroy(bitmap);
     pdfium().ClosePage(page);
     return image;
+}
+
+bool PdfDocument::textSelectable()
+{
+    return pdfium().ok && pdfium().textOk;
+}
+
+/// From PDF space - points, y going up from the bottom, before the page's own
+/// rotation - to fractions of the page as it is drawn. PageToDevice applies
+/// the same rotation the renderer does, so the two always agree.
+QRectF PdfDocument::toView(double left, double top, double right, double bottom) const
+{
+    int x1 = 0, y1 = 0, x2 = 0, y2 = 0;
+    pdfium().PageToDevice(m_textPage, 0, 0, kDeviceUnits, kDeviceUnits, 0, left, top, &x1, &y1);
+    pdfium().PageToDevice(m_textPage, 0, 0, kDeviceUnits, kDeviceUnits, 0, right, bottom, &x2, &y2);
+    // On a rotated page either corner can come out on either side.
+    const qreal units = kDeviceUnits;
+    return QRectF(QPointF(qMin(x1, x2) / units, qMin(y1, y2) / units),
+                  QPointF(qMax(x1, x2) / units, qMax(y1, y2) / units));
+}
+
+/// Callers hold the lock.
+bool PdfDocument::openText(int page) const
+{
+    if (page == m_textIndex) {
+        return m_text != nullptr;
+    }
+    closeText();
+    if (!m_doc || !pdfium().textOk || page < 0 || page >= m_pageCount) {
+        return false;
+    }
+    m_textPage = pdfium().LoadPage(m_doc, page);
+    m_text = m_textPage ? pdfium().TextLoadPage(m_textPage) : nullptr;
+    // Remembered even when it failed, so a page without text is not parsed
+    // again on every mouse movement.
+    m_textIndex = page;
+    if (!m_text) {
+        return false;
+    }
+
+    const int count = pdfium().TextCountChars(m_text);
+    m_boxes.reserve(qMax(0, count));
+    for (int i = 0; i < count; ++i) {
+        double left = 0, right = 0, bottom = 0, top = 0;
+        m_boxes.append(pdfium().TextGetCharBox(m_text, i, &left, &right, &bottom, &top)
+                           ? toView(left, top, right, bottom)
+                           : QRectF());
+    }
+    return true;
+}
+
+/// Callers hold the lock.
+void PdfDocument::closeText() const
+{
+    if (m_text) {
+        pdfium().TextClosePage(m_text);
+        m_text = nullptr;
+    }
+    if (m_textPage) {
+        pdfium().ClosePage(m_textPage);
+        m_textPage = nullptr;
+    }
+    m_textIndex = -1;
+    m_boxes.clear();
+}
+
+int PdfDocument::charCount(int page) const
+{
+    QMutexLocker locked(&pdfiumLock());
+    return openText(page) ? int(m_boxes.size()) : 0;
+}
+
+int PdfDocument::charAt(int page, qreal x, qreal y) const
+{
+    QMutexLocker locked(&pdfiumLock());
+    if (!openText(page)) {
+        return -1;
+    }
+    int nearest = -1;
+    qreal best = std::numeric_limits<qreal>::max();
+    for (int i = 0; i < m_boxes.size(); ++i) {
+        const QRectF &box = m_boxes.at(i);
+        // Spaces and the line breaks PDFium adds have no size; a point near
+        // one lands on the character beside it.
+        if (box.isEmpty()) {
+            continue;
+        }
+        if (box.contains(x, y)) {
+            return i;
+        }
+        const qreal dx = qMax(qMax(box.left() - x, 0.0), x - box.right());
+        const qreal dy = qMax(qMax(box.top() - y, 0.0), y - box.bottom());
+        // Being on the line matters far more than being near the character:
+        // past the end of a line means the end of that line, not the start
+        // of the one below it.
+        const qreal distance = dy * 8 + dx;
+        if (distance < best) {
+            best = distance;
+            nearest = i;
+        }
+    }
+    return nearest;
+}
+
+QVariantList PdfDocument::textRects(int page, int from, int to) const
+{
+    QMutexLocker locked(&pdfiumLock());
+    QVariantList rects;
+    if (!openText(page)) {
+        return rects;
+    }
+    from = qMax(0, from);
+    to = qMin(to, int(m_boxes.size()) - 1);
+    if (from > to) {
+        return rects;
+    }
+    // One band per line, from its first selected character to its last. A box
+    // per character leaves gaps between the letters and changes height with
+    // each letter's shape; PDFium's own merging gives exactly that for files
+    // that place every glyph separately, as many do.
+    QRectF line;
+    auto finishLine = [&] {
+        if (!line.isNull()) {
+            const qreal pad = line.height() * 0.15;
+            rects.append(line.adjusted(0, -pad, 0, pad));
+        }
+    };
+    for (int i = from; i <= to; ++i) {
+        const QRectF &box = m_boxes.at(i);
+        if (box.isEmpty()) {
+            continue;
+        }
+        // Still the same line while the heights overlap at all: a full stop
+        // or a comma is level with the capitals beside it, the line below is
+        // not.
+        if (!line.isNull() && qMin(line.bottom(), box.bottom()) > qMax(line.top(), box.top())) {
+            line = line.united(box);
+        } else {
+            finishLine();
+            line = box;
+        }
+    }
+    finishLine();
+    return rects;
+}
+
+QString PdfDocument::text(int page, int from, int to) const
+{
+    QMutexLocker locked(&pdfiumLock());
+    if (!openText(page)) {
+        return QString();
+    }
+    from = qMax(0, from);
+    to = qMin(to, int(m_boxes.size()) - 1);
+    if (from > to) {
+        return QString();
+    }
+    const int count = to - from + 1;
+    std::vector<unsigned short> buffer(count + 1);
+    // The count written includes the terminating zero.
+    const int written = pdfium().TextGetText(m_text, from, count, buffer.data());
+    QString result = QString::fromUtf16(reinterpret_cast<const char16_t *>(buffer.data()),
+                                        qMax(0, written - 1));
+    // PDFium ends its lines with \r\n. The clipboard adds its own \r on
+    // Windows, so a \r left here would come out doubled.
+    result.replace(QStringLiteral("\r\n"), QStringLiteral("\n"));
+    return result;
+}
+
+void PdfDocument::copyToClipboard(const QString &text) const
+{
+    QGuiApplication::clipboard()->setText(text);
 }

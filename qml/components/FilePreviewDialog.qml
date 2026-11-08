@@ -259,9 +259,9 @@ Rectangle {
     // has always worked reliably here.
     Shortcut {
         sequences: [StandardKey.Cancel]   // Escape
-        // Typing a page number, Escape belongs to the field: it cancels the
-        // number, not the whole preview.
-        enabled: root.isOpen && !pdfPanel.editingPage
+        // Typing a page or a zoom into the PDF bar, Escape belongs to the
+        // field: it cancels the number, not the whole preview.
+        enabled: root.isOpen && !pdfPanel.typingInBar
         onActivated: {
             // Escape leaves the enlarged view first and closes the window only
             // when it is already at its normal size, so the key never throws
@@ -598,7 +598,7 @@ Rectangle {
                     anchors.fill: parent
                     visible: !!(root.fileData && root.fileData.isPdf) && previewService.pdfSupported
                     filePath: visible ? root.filePath : ""
-                    onPageEntryFinished: root.forceActiveFocus()
+                    onBarEntryFinished: root.forceActiveFocus()
                 }
 
                 // Said when the file is a PDF but nothing can draw it.
@@ -993,6 +993,10 @@ Rectangle {
             if (event.key === Qt.Key_Home) { pdfPanel.toStart(); event.accepted = true; return }
             if (event.key === Qt.Key_End) { pdfPanel.toEnd(); event.accepted = true; return }
             if (event.modifiers & Qt.ControlModifier) {
+                if (event.key === Qt.Key_C && pdfPanel.copySelection()) {
+                    event.accepted = true
+                    return
+                }
                 if (event.key === Qt.Key_Plus || event.key === Qt.Key_Equal) {
                     pdfPanel.zoomBy(1.25); event.accepted = true; return
                 }
