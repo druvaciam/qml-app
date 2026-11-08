@@ -205,6 +205,15 @@ void AppController::loadSession()
         m_rightPanel->model()->setDeepSearch(rightDeep);
     }
 
+    // Where each panel was on each drive, so switching drives after a restart
+    // goes back there too.
+    if (m_leftPanel) {
+        m_leftPanel->setDrivePaths(settings.value(QStringLiteral("session/leftDrivePaths")).toMap());
+    }
+    if (m_rightPanel) {
+        m_rightPanel->setDrivePaths(settings.value(QStringLiteral("session/rightDrivePaths")).toMap());
+    }
+
     QString homePath = QDir::homePath();
 
     // Restore Left Panel
@@ -234,9 +243,11 @@ void AppController::saveSession()
     QSettings settings;
     if (m_leftPanel && !m_leftPanel->currentPath().isEmpty()) {
         settings.setValue(QStringLiteral("session/leftPanelPath"), m_leftPanel->currentPath());
+        settings.setValue(QStringLiteral("session/leftDrivePaths"), m_leftPanel->drivePaths());
     }
     if (m_rightPanel && !m_rightPanel->currentPath().isEmpty()) {
         settings.setValue(QStringLiteral("session/rightPanelPath"), m_rightPanel->currentPath());
+        settings.setValue(QStringLiteral("session/rightDrivePaths"), m_rightPanel->drivePaths());
     }
     settings.setValue(QStringLiteral("session/activePanelIndex"), m_activePanelIndex);
 

@@ -116,6 +116,10 @@ This cannot be undone.</source>
         <source>Replace (Enter)</source>
         <translation>Замяніць (Enter)</translation>
     </message>
+    <message>
+        <source>These files already exist</source>
+        <translation>Такія файлы ўжо існуюць</translation>
+    </message>
 </context>
 <context>
     <name>CopyMoveDialog</name>
@@ -595,6 +599,14 @@ This cannot be undone.</source>
         <source>COPY</source>
         <translation>КАПІЯВАЦЬ</translation>
     </message>
+    <message>
+        <source>Cannot open</source>
+        <translation>Немагчыма адкрыць</translation>
+    </message>
+    <message>
+        <source>No application is associated with this file.</source>
+        <translation>Няма праграмы, каб адкрыць гэты файл.</translation>
+    </message>
 </context>
 <context>
     <name>MediaPlayerPanel</name>
@@ -624,6 +636,10 @@ This cannot be undone.</source>
     <message>
         <source>Create</source>
         <translation>Стварыць</translation>
+    </message>
+    <message>
+        <source>New Folder</source>
+        <translation>Новая тэчка</translation>
     </message>
 </context>
 <context>

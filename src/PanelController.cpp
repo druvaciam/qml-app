@@ -12,6 +12,11 @@ PanelController::PanelController(QObject *parent)
       m_model(new FileListModel(this))
 {
     connect(m_model, &FileListModel::currentPathChanged, this, [this](const QString &path) {
+        // Remembered before the signal goes out, so a session saved in answer
+        // to it already has this folder.
+        if (!path.isEmpty()) {
+            m_lastPathOnDrive.insert(driveRootOf(path), path);
+        }
         emit currentPathChanged(path);
         updateCurrentDriveInfo();
         emit statusChanged();
@@ -190,7 +195,59 @@ void PanelController::goForward()
 
 void PanelController::changeDrive(const QString &rootPath)
 {
-    navigateTo(rootPath);
+    // Another drive: back to the folder this panel was last in there, or the
+    // nearest folder above it that still exists. The drive already open: its
+    // root, so its button is also the quick way to the top.
+    QString target = rootPath;
+    const QString last = m_lastPathOnDrive.value(rootPath);
+    if (!last.isEmpty() && driveRootOf(currentPath()) != rootPath) {
+        QString candidate = last;
+        while (!QDir(candidate).exists() && candidate.size() > rootPath.size()) {
+            candidate = QFileInfo(candidate).path();
+        }
+        if (QDir(candidate).exists()) {
+            target = candidate;
+        }
+    }
+    navigateTo(target);
+}
+
+/// The root of the drive a path is on: the longest known drive root the path
+/// starts with, so a mount inside "/" counts as a drive of its own.
+QString PanelController::driveRootOf(const QString &path) const
+{
+#ifdef Q_OS_WIN
+    constexpr Qt::CaseSensitivity sensitivity = Qt::CaseInsensitive;
+#else
+    constexpr Qt::CaseSensitivity sensitivity = Qt::CaseSensitive;
+#endif
+    QString best;
+    for (const DriveInfo &drive : m_driveList) {
+        const QString root = drive.rootPath();
+        const bool inside = path.startsWith(root, sensitivity)
+                            && (path.size() == root.size() || root.endsWith(QLatin1Char('/'))
+                                || path.at(root.size()) == QLatin1Char('/'));
+        if (inside && root.size() > best.size()) {
+            best = root;
+        }
+    }
+    return best.isEmpty() ? QStorageInfo(path).rootPath() : best;
+}
+
+QVariantMap PanelController::drivePaths() const
+{
+    QVariantMap paths;
+    for (auto it = m_lastPathOnDrive.cbegin(); it != m_lastPathOnDrive.cend(); ++it) {
+        paths.insert(it.key(), it.value());
+    }
+    return paths;
+}
+
+void PanelController::setDrivePaths(const QVariantMap &paths)
+{
+    for (auto it = paths.cbegin(); it != paths.cend(); ++it) {
+        m_lastPathOnDrive.insert(it.key(), it.value().toString());
+    }
 }
 
 void PanelController::refresh()

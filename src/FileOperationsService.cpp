@@ -116,8 +116,8 @@ public:
         return S_OK;
     }
     // Returning a failure from a Pre* callback stops IFileOperation. This is the
-    // only way to cancel it: the service's cancel flag is not something the shell
-    // ever looks at, so before this the Cancel button did nothing at all.
+    // only way to cancel it: the shell never looks at the service's cancel flag,
+    // so without this the Cancel button would do nothing at all.
     IFACEMETHODIMP PreMoveItem(DWORD, IShellItem *, IShellItem *, LPCWSTR) override { return abortIfCancelled(); }
     IFACEMETHODIMP PreCopyItem(DWORD, IShellItem *, IShellItem *, LPCWSTR) override { return abortIfCancelled(); }
     IFACEMETHODIMP PreDeleteItem(DWORD, IShellItem *) override { return abortIfCancelled(); }
@@ -438,8 +438,8 @@ void FileOperationsService::startOperation(const QString &title, const QString &
     setBusy(true);
     setOperationTitle(title);
     setStatusMessage(status);
-    // The total was NOT being cleared, so a new operation briefly showed
-    // "0 of <previous total>" until the worker had finished counting.
+    // The total is cleared as well as the count, or a new operation briefly
+    // shows "0 of <previous total>" until the worker has finished counting.
     m_workerProcessed.storeRelease(0);
     m_workerTotal.storeRelease(0);
     {
@@ -498,7 +498,7 @@ QList<int> FileOperationsService::countEachPath(const QStringList &paths)
 /// Carry the source's modification date onto the copy.
 ///
 /// QFile::copy brings content and permissions across but not timestamps, so
-/// every copied file was stamped with the moment it was copied. Explorer and
+/// without this every copy would carry the moment it was made. Explorer and
 /// Total Commander both preserve it, and Date is one of the columns this app
 /// sorts by, so losing it reorders a folder that was only duplicated.
 /// Copies are written beside the destination and swapped in only once they
@@ -1183,8 +1183,8 @@ bool FileOperationsService::createDirectory(const QString &parentPath, const QSt
 
     const QString name = dirName.trimmed();
 
-    // mkdir just returns false when something is already there, which produced a
-    // "Failed to create folder" that did not say why.
+    // mkdir just returns false when something is already there, which on its
+    // own gives a "Failed to create folder" that does not say why.
     if (parentDir.exists(name)) {
         emit operationError(tr("\"%1\" already exists in this folder.").arg(name));
         return false;
@@ -1218,7 +1218,7 @@ bool FileOperationsService::performRename(const QString &oldPath, const QString 
     QString newPath = info.dir().filePath(trimmed);
 
     // QFile::rename just returns false when something is already there, which
-    // produced a "Failed to rename" that did not say why.
+    // on its own gives a "Failed to rename" that does not say why.
     if (QFileInfo::exists(newPath)) {
         if (errorOut) {
             *errorOut = tr("\"%1\" already exists in this folder.").arg(trimmed);

@@ -87,7 +87,8 @@ Rectangle {
                         }
 
                         ToolTip.visible: containsMouse
-                        ToolTip.text: (modelData.displayName.length > 0 ? modelData.displayName + "\n" : "")
+                        // The volume's label, when it has one, above the sizes.
+                        ToolTip.text: (modelData.name.length > 0 ? modelData.name + "\n" : "")
                                       + qsTr("Total: %1").arg(modelData.formattedTotal) + "\n"
                                       + qsTr("Free: %1 (%2%)").arg(modelData.formattedFree)
                                                               .arg(Math.round((1.0 - modelData.percentUsed) * 100))

@@ -155,7 +155,7 @@ void installLogging()
     // "qml" is Qt's own category for console.log in QML. Setting any rules at
     // all replaces the defaults, so without naming it here a developer's
     // console.log vanishes from the log while console.warn still arrives -
-    // warnings are not debug level, so they were never filtered.
+    // warnings are not debug level, so nothing filters them.
     // The qt.multimedia rules quiet the FFmpeg backend: it lists its hardware
     // decoders at info level on first use, and warns when a stream header has
     // no duration even though it then reads one from the container. Neither is

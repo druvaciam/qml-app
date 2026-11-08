@@ -1031,10 +1031,9 @@ FocusScope {
                         // nothing is being renamed, and a delegate's `index` is
                         // also -1 while it is being torn down or rebuilt - so a
                         // bare equality is TRUE during every model reset. The
-                        // editor then loaded, took focus via beginEditing(), and
-                        // was destroyed again, leaving focus on the delegate.
-                        // That is what stole focus from the quick filter on each
-                        // keystroke.
+                        // editor then loads, takes focus via beginEditing(), and
+                        // is destroyed again, leaving focus on the delegate -
+                        // taking it from the quick filter on every keystroke.
                         active: rootListView.editingIndex >= 0
                                 && rootListView.editingIndex === index
                         sourceComponent: renameEditorComponent

@@ -501,8 +501,8 @@ Rectangle {
                         /// Moves the caret a screenful at a time. A TextArea
                         /// does not implement Page Up or Page Down itself, and
                         /// the ScrollView around it only reacts to the caret
-                        /// moving - so without this the keys did nothing at all
-                        /// in a file too long to fit.
+                        /// moving - so without this the keys would do nothing at
+                        /// all in a file too long to fit.
                         function pageBy(direction) {
                             const lineHeight = Math.max(1, editorText.cursorRectangle.height)
                             const visibleLines = Math.max(1, Math.floor(editorScroll.availableHeight / lineHeight) - 1)
@@ -527,8 +527,8 @@ Rectangle {
 
                         // Escape is handled here rather than relying on the key
                         // bubbling out through ScrollView to the root. Ctrl+S
-                        // ends by focusing this editor, and once focus was in
-                        // here Escape stopped reaching the root's handler.
+                        // ends by focusing this editor, and once focus is in
+                        // here Escape does not reach the root's handler.
                         Keys.onEscapePressed: (event) => {
                             root.close()
                             event.accepted = true
@@ -683,7 +683,7 @@ Rectangle {
                             Layout.fillHeight: true
                             // Hiding the section is not enough: an Image with a
                             // source still loads it, so a sound or video file
-                            // was being handed to the image decoder and logging
+                            // would be handed to the image decoder, logging
                             // "Unsupported image format" every time.
                             source: root.fileData && root.fileData.isImage
                                     ? (root.fileData.fileUrl || "") : ""
@@ -707,8 +707,8 @@ Rectangle {
                 // 3. Binary / Other File View
                 ColumnLayout {
                     anchors.centerIn: parent
-                    // Audio and video have their own section above. Without
-                    // excluding them here, this drew on top of a playing video.
+                    // Audio, video and PDFs have their own sections above, and
+                    // this one must leave them out or it draws on top of them.
                     visible: Boolean(!root.fileData?.isText && !root.fileData?.isImage
                                      && !root.fileData?.isAudio && !root.fileData?.isVideo
                                      && !root.fileData?.isPdf)
@@ -963,11 +963,11 @@ Rectangle {
         root.userActive()
         // Tab is handled here rather than in a Keys.onTabPressed because this
         // item has a blanket accept at the end. Specific handlers do run first
-        // - Keys.onPressed only sees what they leave - but there was no Tab
-        // handler on this item at all, so Tab fell through to the accept below
-        // and vanished. In view mode the root holds focus, so that was the only
-        // place Tab ever arrived. Either shape works; this keeps the routing in
-        // one place, next to the accept that would otherwise hide it.
+        // - Keys.onPressed only sees what they leave - so without Tab handled
+        // on this item, Tab would fall through to the accept below and vanish.
+        // In view mode the root holds focus, so this is the only place Tab
+        // arrives. Either shape works; this keeps the routing in one place,
+        // next to the accept that would otherwise hide it.
         if (event.key === Qt.Key_Tab) {
             root.stepFocus(1)
             event.accepted = true

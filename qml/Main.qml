@@ -63,8 +63,8 @@ ApplicationWindow {
         // a key press that appears to do nothing at all.
         onRequestOpenInDefaultApp: (filePath) => {
             if (!appCtrl.preview.openInDefaultApp(filePath)) {
-                messageDialog.title = "Cannot open"
-                messageDialog.messageText = "No application is associated with this file."
+                messageDialog.title = qsTr("Cannot open")
+                messageDialog.messageText = qsTr("No application is associated with this file.")
                 messageDialog.open()
             }
         }
@@ -792,8 +792,8 @@ ApplicationWindow {
             // operationCompleted, and it is operationCompleted that runs
             // refreshAll() and destroys every delegate. Restoring focus here and
             // now would just have it thrown away a moment later by that reload,
-            // which is exactly what was happening: the border stayed on the pane
-            // you were using while the keyboard ended up in the other one.
+            // and the border would stay on the pane in use while the keyboard
+            // ended up in the other one.
             if (!busy) {
                 Qt.callLater(function() {
                     if (!anyModalOpen()) restoreActiveFocus()

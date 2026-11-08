@@ -24,7 +24,7 @@ Rectangle {
     z: 110
 
     function open() {
-        folderNameInput.text = "New Folder"
+        folderNameInput.text = qsTr("New Folder")
         isOpen = true
         folderNameInput.forceActiveFocus()
         folderNameInput.selectAll()
@@ -96,8 +96,8 @@ Rectangle {
                     selectByMouse: true
                     verticalAlignment: TextInput.AlignVCenter
                     // A TextField carries its own padding on top of the anchor
-                    // margins. With margins of 6 inside a 34px box that left only
-                    // ~10px for 13px glyphs, so they were clipped top and bottom.
+                    // margins. With margins of 6 inside a 34px box that leaves only
+                    // ~10px for 13px glyphs, which clips them top and bottom.
                     topPadding: 0
                     bottomPadding: 0
                     leftPadding: 8

@@ -81,7 +81,7 @@ FocusScope {
                 }
                 Text {
                     text: root.conflictNames.length === 1 ? qsTr("This file already exists")
-                                                          : "These files already exist"
+                                                          : qsTr("These files already exist")
                     font.family: Theme.fontFamily
                     font.pixelSize: Theme.fontSizeLarge
                     font.bold: true
@@ -200,10 +200,10 @@ FocusScope {
         }
     }
 
-    // Every key is consumed here. Without this, Enter fell straight through to
-    // the file list behind the dialog and opened whatever the cursor was on,
-    // leaving a preview window sitting under a modal that was still waiting for
-    // an answer. A modal must not leak keys to what it is covering.
+    // Every key is consumed here. Without this, Enter falls straight through to
+    // the file list behind the dialog and opens whatever the cursor is on,
+    // leaving a preview window under a modal that is still waiting for an
+    // answer. A modal must not leak keys to what it is covering.
     Keys.onPressed: (event) => {
         if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
             // Replace is the accented default button, so Enter picks it.

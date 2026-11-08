@@ -23,10 +23,14 @@ DriveInfo::DriveInfo(const QStorageInfo &storage)
         m_percentUsed = 0.0;
     }
 
-    if (m_displayName.isEmpty() || m_displayName == m_rootPath) {
 #ifdef Q_OS_WIN
-        m_displayName = m_rootPath;
+    // The drive letter, "C:", whether or not the volume has a label.
+    // QStorageInfo puts a label in place of the path, so a labelled drive and
+    // an unlabelled one would be named differently; the label stays in name()
+    // for the tooltip.
+    m_displayName = m_rootPath.endsWith(QLatin1Char('/')) ? m_rootPath.chopped(1) : m_rootPath;
 #else
+    if (m_displayName.isEmpty() || m_displayName == m_rootPath) {
         if (m_rootPath == QStringLiteral("/")) {
             m_displayName = QStringLiteral("/");
         } else if (m_rootPath.startsWith(QStringLiteral("/mnt/")) && m_rootPath.length() == 6) {
@@ -39,8 +43,8 @@ DriveInfo::DriveInfo(const QStorageInfo &storage)
         } else {
             m_displayName = m_rootPath;
         }
-#endif
     }
+#endif
 }
 
 QString DriveInfo::formatBytes(qint64 bytes)

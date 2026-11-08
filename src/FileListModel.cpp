@@ -499,9 +499,9 @@ void FileListModel::applyKnownChanges(const QStringList &paths)
     qCDebug(lcModel).noquote() << "applying" << mine.size() << "known changes in" << m_currentPath
                                << (mine.size() > kSurgicalLimit ? "(rebuild)" : "(row by row)");
 
-    // Index the full listing once. Looking each path up by scanning was what
-    // made pasting 1644 files into a folder of 28486 appear to hang: 47 million
-    // path comparisons, each allocating.
+    // Index the full listing once. Looking each path up by scanning would make
+    // pasting 1644 files into a folder of 28486 hang: 47 million path
+    // comparisons, each allocating.
     QHash<QString, int> allIndex;
     allIndex.reserve(m_allItems.size());
     for (int i = 0; i < static_cast<int>(m_allItems.size()); ++i) {
@@ -1245,9 +1245,9 @@ bool FileListModel::listingsMatch(const QList<FileItem> &a, const QList<FileItem
         // Size is compared for files only. A directory is always scanned with a
         // size of zero, so the two can differ for exactly one reason: Space was
         // pressed on it and this application counted what is inside. Comparing
-        // that made every later refresh of the folder look like a change - the
-        // list was rebuilt, the scroll position and cursor were lost, and the
-        // number the user asked for was wiped in the process.
+        // it would make every later refresh of the folder look like a change:
+        // the list rebuilt, the scroll position and cursor lost, and the number
+        // the user asked for wiped.
         if (other->isDir != it.isDir
             || (!it.isDir && other->size != it.size)
             || other->lastModified != it.lastModified
@@ -1806,6 +1806,14 @@ bool FileListModel::itemLessThan(const FileItem &lhs, const FileItem &rhs) const
     // Directories always first, in both sort directions
     if (lhs.isDir != rhs.isDir) {
         return lhs.isDir > rhs.isDir;
+    }
+
+    // Directories keep to name order, A to Z, whatever the files are sorted
+    // by: a date, size or extension says little about a folder, and the
+    // folders stay where they are when the column or its direction changes.
+    // Only a sort by name reverses them.
+    if (lhs.isDir && m_sortColumn != SortByName) {
+        return compareByName(lhs, rhs) < 0;
     }
 
     // Swap the operands for a descending sort rather than negating the result:

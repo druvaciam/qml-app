@@ -25,9 +25,11 @@
 
 #pragma once
 
+#include <QHash>
 #include <QObject>
 #include <QStringList>
 #include <QUrl>
+#include <QVariantMap>
 #include <QtQml/qqmlregistration.h>
 #include "FileListModel.h"
 #include "DriveInfo.h"
@@ -73,6 +75,11 @@ public:
 
     QList<DriveInfo> driveList() const { return m_driveList; }
     DriveInfo currentDriveInfo() const;
+
+    /// The folder this panel was last in on each drive, by the drive's root,
+    /// for the saved session.
+    QVariantMap drivePaths() const;
+    void setDrivePaths(const QVariantMap &paths);
 
     int totalItemsCount() const { return m_model ? m_model->fileItemsCount() : 0; }
     int selectedItemsCount() const { return m_model ? m_model->selectedCount() : 0; }
@@ -149,10 +156,10 @@ public:
     /**
      * @brief Give this panel the shared operations service.
      *
-     * Renaming used to call the static performRename() directly, which reports
-     * nothing: a rename that failed left the old name in place with no message.
-     * Going through the service means failures arrive as operationError, which
-     * AppController already shows.
+     * Renames go through the service rather than the static performRename(),
+     * which reports nothing: a failed rename would leave the old name in place
+     * with no message. Through the service, failures arrive as operationError,
+     * which AppController shows.
      */
     void setFileOperations(FileOperationsService *ops) { m_fileOps = ops; }
 
@@ -196,6 +203,7 @@ private:
     void pushHistory(const QString &path);
     void trySelectNewItem(const QStringList &namesBefore, int attemptsLeft);
     void updateCurrentDriveInfo();
+    QString driveRootOf(const QString &path) const;
 
     FileListModel *m_model = nullptr;
     FileOperationsService *m_fileOps = nullptr;
@@ -208,4 +216,7 @@ private:
     QString m_filterText;
     /// Set before navigating, applied once that folder has finished loading.
     QString m_pendingSelectName;
+    /// Drive root to the folder last open on that drive; changeDrive() goes
+    /// back there.
+    QHash<QString, QString> m_lastPathOnDrive;
 };

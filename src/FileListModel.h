@@ -129,8 +129,8 @@ public:
 
     /// Rows the user can actually act on. `count` is the row count, which the
     /// view needs, but it includes the ".." row - that is navigation, not an
-    /// item, and it cannot be selected. The status bar was reporting it and so
-    /// read one too many in every folder below the root.
+    /// item, and it cannot be selected. Counting it, the status bar would read
+    /// one too many in every folder below the root.
     int fileItemsCount() const
     {
         const int rows = static_cast<int>(m_items.size());

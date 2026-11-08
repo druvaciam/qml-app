@@ -96,9 +96,9 @@ Rectangle {
                     }
 
                     // Matches the 80 ms publish interval with linear easing, so
-                    // each step completes just as the next arrives. A 150 ms
-                    // OutQuad was being interrupted mid-ease by every update,
-                    // which made the bar advance in uneven lurches.
+                    // each step completes just as the next arrives. A longer,
+                    // eased animation is cut short by every update, and the bar
+                    // advances in uneven lurches.
                     Behavior on width {
                         NumberAnimation { duration: 80; easing.type: Easing.Linear }
                     }
