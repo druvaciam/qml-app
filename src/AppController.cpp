@@ -85,6 +85,7 @@ AppController::AppController(QObject *parent)
         }
         connect(panel->model(), &FileListModel::showHiddenChanged, this, &AppController::saveSession);
         connect(panel->model(), &FileListModel::deepSearchChanged, this, &AppController::saveSession);
+        connect(panel->model(), &FileListModel::sortChanged, this, &AppController::saveSession);
     }
 
     // Load and restore last session paths and settings
@@ -192,6 +193,19 @@ void AppController::loadSession()
     bool rightHidden = settings.value(QStringLiteral("session/rightShowHidden"), false).toBool();
     bool leftDeep = settings.value(QStringLiteral("session/leftDeepSearch"), false).toBool();
     bool rightDeep = settings.value(QStringLiteral("session/rightDeepSearch"), false).toBool();
+    // Read before anything is applied: applying one saves the session, which
+    // would otherwise overwrite the other panel's value before it is read.
+    const int leftSortColumn = settings.value(QStringLiteral("session/leftSortColumn"),
+                                              FileListModel::SortByName).toInt();
+    const int rightSortColumn = settings.value(QStringLiteral("session/rightSortColumn"),
+                                               FileListModel::SortByName).toInt();
+    const bool leftSortAscending = settings.value(QStringLiteral("session/leftSortAscending"), true).toBool();
+    const bool rightSortAscending = settings.value(QStringLiteral("session/rightSortAscending"), true).toBool();
+    // A value from a damaged or older settings file falls back to name order.
+    auto validColumn = [](int column) {
+        return column >= FileListModel::SortByName && column <= FileListModel::SortByDate
+                   ? column : int(FileListModel::SortByName);
+    };
 
     // Both switches are restored before the folders load. Deep search comes
     // back as a mode with an empty filter, so it arms the next search rather
@@ -199,10 +213,14 @@ void AppController::loadSession()
     if (m_leftPanel && m_leftPanel->model()) {
         m_leftPanel->model()->setShowHidden(leftHidden);
         m_leftPanel->model()->setDeepSearch(leftDeep);
+        m_leftPanel->model()->setSortColumn(validColumn(leftSortColumn));
+        m_leftPanel->model()->setSortAscending(leftSortAscending);
     }
     if (m_rightPanel && m_rightPanel->model()) {
         m_rightPanel->model()->setShowHidden(rightHidden);
         m_rightPanel->model()->setDeepSearch(rightDeep);
+        m_rightPanel->model()->setSortColumn(validColumn(rightSortColumn));
+        m_rightPanel->model()->setSortAscending(rightSortAscending);
     }
 
     // Where each panel was on each drive, so switching drives after a restart
@@ -254,10 +272,14 @@ void AppController::saveSession()
     if (m_leftPanel && m_leftPanel->model()) {
         settings.setValue(QStringLiteral("session/leftShowHidden"), m_leftPanel->model()->showHidden());
         settings.setValue(QStringLiteral("session/leftDeepSearch"), m_leftPanel->model()->deepSearch());
+        settings.setValue(QStringLiteral("session/leftSortColumn"), m_leftPanel->model()->sortColumn());
+        settings.setValue(QStringLiteral("session/leftSortAscending"), m_leftPanel->model()->sortAscending());
     }
     if (m_rightPanel && m_rightPanel->model()) {
         settings.setValue(QStringLiteral("session/rightShowHidden"), m_rightPanel->model()->showHidden());
         settings.setValue(QStringLiteral("session/rightDeepSearch"), m_rightPanel->model()->deepSearch());
+        settings.setValue(QStringLiteral("session/rightSortColumn"), m_rightPanel->model()->sortColumn());
+        settings.setValue(QStringLiteral("session/rightSortAscending"), m_rightPanel->model()->sortAscending());
     }
     settings.sync();
 }
