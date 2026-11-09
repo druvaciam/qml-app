@@ -27,7 +27,8 @@ SOURCES += ../qml/Main.qml \
            ../qml/components/MediaPlayerPanel.qml \
            ../qml/components/PdfViewPanel.qml \
            ../qml/components/NewFolderDialog.qml \
-           ../qml/components/OperationProgressModal.qml
+           ../qml/components/OperationProgressModal.qml \
+           ../qml/components/PanelTabs.qml
 }
 
 TRANSLATIONS = qmlcommander_be.ts

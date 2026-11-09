@@ -1,6 +1,7 @@
 #include "FilePreviewService.h"
 #include "PdfDocument.h"
 #include "DriveInfo.h"
+#include "Logging.h"
 #include <QDesktopServices>
 #include <QDir>
 #include <QFile>
@@ -287,12 +288,28 @@ bool FilePreviewService::openInTerminal(const QString &dirPath)
     }
 
 #if defined(Q_OS_WIN)
-    // A folder name may legally contain a single quote, which would otherwise close
-    // the quoted argument and let the rest of the name run as PowerShell code.
-    // PowerShell escapes a literal quote inside a single-quoted string by doubling it.
-    QString quoted = path;
-    quoted.replace(QLatin1Char('\''), QStringLiteral("''"));
-    return QProcess::startDetached(QStringLiteral("powershell.exe"), {QStringLiteral("-NoExit"), QStringLiteral("-Command"), QStringLiteral("Set-Location '%1'").arg(quoted)});
+    // The shell starts inside the folder. The folder name is not put into a
+    // command, so a strange name cannot run as code.
+    // By default Qt starts PowerShell with no window, so the user sees nothing.
+    // The code below asks Windows for a new window. It also makes the shell
+    // write its text into that window, not into this app.
+    QProcess process;
+    process.setProgram(QStringLiteral("powershell.exe"));
+    process.setArguments({QStringLiteral("-NoExit")});
+    process.setWorkingDirectory(path);
+    process.setCreateProcessArgumentsModifier([](QProcess::CreateProcessArguments *args) {
+        args->flags &= ~DWORD(CREATE_NO_WINDOW | DETACHED_PROCESS);
+        args->flags |= CREATE_NEW_CONSOLE;
+        args->startupInfo->dwFlags &= ~DWORD(STARTF_USESTDHANDLES);
+        args->inheritHandles = FALSE;
+    });
+    const bool started = process.startDetached();
+    if (started) {
+        qCInfo(lcApp).noquote() << "terminal opened in" << path;
+    } else {
+        qCWarning(lcApp).noquote() << "terminal did not start in" << path << "-" << process.errorString();
+    }
+    return started;
 #elif defined(Q_OS_MAC)
     return QProcess::startDetached(QStringLiteral("open"), {QStringLiteral("-a"), QStringLiteral("Terminal"), path});
 #else

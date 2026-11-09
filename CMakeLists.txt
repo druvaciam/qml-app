@@ -94,6 +94,7 @@ qt_add_qml_module(appQmlCommander
         qml/components/ConflictDialog.qml
         qml/components/CopyMoveDialog.qml
         qml/components/PdfViewPanel.qml
+        qml/components/PanelTabs.qml
         ${QMLCOMMANDER_MEDIA_QML}
     RESOURCES
         resources/app_icon.png

@@ -169,7 +169,7 @@ Rectangle {
                 cursorShape: Qt.PointingHandCursor
                 onClicked: root.requestTerminal()
                 ToolTip.visible: containsMouse
-                ToolTip.text: qsTr("Open Terminal in active folder")
+                ToolTip.text: qsTr("Open Terminal in active folder (Ctrl+Shift+T)")
             }
         }
 

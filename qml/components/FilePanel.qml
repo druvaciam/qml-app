@@ -56,6 +56,13 @@ FocusScope {
                 controller: root.controller
             }
 
+            PanelTabs {
+                Layout.fillWidth: true
+                controller: root.controller
+                visible: root.controller.tabPaths.length > 1
+                onTabClicked: fileListView.setFocus()
+            }
+
             // Breadcrumb & Path address bar
             BreadcrumbBar {
                 Layout.fillWidth: true

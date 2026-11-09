@@ -59,6 +59,10 @@ class PanelController : public QObject
     Q_PROPERTY(bool isActive READ isActive WRITE setIsActive NOTIFY isActiveChanged)
     Q_PROPERTY(QString filterText READ filterText WRITE setFilterText NOTIFY filterTextChanged)
 
+    // Tabs: each tab is a folder with its own back/forward history.
+    Q_PROPERTY(QStringList tabPaths READ tabPaths NOTIFY tabsChanged)
+    Q_PROPERTY(int currentTab READ currentTab NOTIFY tabsChanged)
+
 public:
     explicit PanelController(QObject *parent = nullptr);
     ~PanelController() override = default;
@@ -80,6 +84,19 @@ public:
     /// for the saved session.
     QVariantMap drivePaths() const;
     void setDrivePaths(const QVariantMap &paths);
+
+    QStringList tabPaths() const;
+    int currentTab() const { return m_currentTab; }
+    /// A new tab on the current folder, right after the current tab.
+    Q_INVOKABLE void newTab();
+    /// The last tab cannot be closed.
+    Q_INVOKABLE void closeTab(int index);
+    Q_INVOKABLE void switchTab(int index);
+    /// The next tab for +1, the previous for -1, wrapping around.
+    Q_INVOKABLE void stepTab(int step);
+    /// Tabs from the saved session. The current tab's folder is opened by
+    /// the caller; the others are opened when you switch to them.
+    void restoreTabs(const QStringList &paths, int current);
 
     int totalItemsCount() const { return m_model ? m_model->fileItemsCount() : 0; }
     int selectedItemsCount() const { return m_model ? m_model->selectedCount() : 0; }
@@ -182,6 +199,7 @@ signals:
     void currentIndexChanged(int index);
     void isActiveChanged(bool active);
     void filterTextChanged(const QString &filter);
+    void tabsChanged();
     /// A navigation that could not happen, with the reason, so a typo can be
     /// told apart from a folder that merely looks similar.
     void navigationError(const QString &message);
@@ -204,6 +222,19 @@ private:
     void trySelectNewItem(const QStringList &namesBefore, int attemptsLeft);
     void updateCurrentDriveInfo();
     QString driveRootOf(const QString &path) const;
+    /// The path itself if it exists, or the nearest folder above it that
+    /// does; empty if none does.
+    static QString existingFolderAtOrAbove(const QString &path);
+    void storeCurrentTab();
+    void openTab(int index);
+
+    struct Tab {
+        QString path;
+        QStringList history;
+        int historyIndex = -1;
+        /// The file the cursor was on, put back when the tab is opened again.
+        QString cursorName;
+    };
 
     FileListModel *m_model = nullptr;
     FileOperationsService *m_fileOps = nullptr;
@@ -219,4 +250,8 @@ private:
     /// Drive root to the folder last open on that drive; changeDrive() goes
     /// back there.
     QHash<QString, QString> m_lastPathOnDrive;
+    /// The open tab's history lives in m_history; its entry here is filled
+    /// when you leave it.
+    QList<Tab> m_tabs{Tab()};
+    int m_currentTab = 0;
 };

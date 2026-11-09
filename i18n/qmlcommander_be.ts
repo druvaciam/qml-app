@@ -1,4 +1,4 @@
-<?xml version='1.0' encoding='utf-8'?>
+<?xml version="1.0" encoding="utf-8"?>
 <!DOCTYPE TS>
 <TS version="2.1" language="be_BY" sourcelanguage="en">
 <context>
@@ -80,14 +80,22 @@
     <message numerus="yes">
         <source>Are you sure you want to PERMANENTLY delete %n item(s)?
 This cannot be undone.</source>
-        <translation><numerusform>Сапраўды выдаліць %n элемент НАЗАЎСЁДЫ?
-Гэтае дзеянне нельга адмяніць.</numerusform><numerusform>Сапраўды выдаліць %n элементы НАЗАЎСЁДЫ?
-Гэтае дзеянне нельга адмяніць.</numerusform><numerusform>Сапраўды выдаліць %n элементаў НАЗАЎСЁДЫ?
-Гэтае дзеянне нельга адмяніць.</numerusform></translation>
+        <translation>
+            <numerusform>Сапраўды выдаліць %n элемент НАЗАЎСЁДЫ?
+Гэтае дзеянне нельга адмяніць.</numerusform>
+            <numerusform>Сапраўды выдаліць %n элементы НАЗАЎСЁДЫ?
+Гэтае дзеянне нельга адмяніць.</numerusform>
+            <numerusform>Сапраўды выдаліць %n элементаў НАЗАЎСЁДЫ?
+Гэтае дзеянне нельга адмяніць.</numerusform>
+        </translation>
     </message>
     <message numerus="yes">
         <source>Are you sure you want to move %n item(s) to the Recycle Bin?</source>
-        <translation><numerusform>Перамясціць %n элемент у сметніцу?</numerusform><numerusform>Перамясціць %n элементы у сметніцу?</numerusform><numerusform>Перамясціць %n элементаў у сметніцу?</numerusform></translation>
+        <translation>
+            <numerusform>Перамясціць %n элемент у сметніцу?</numerusform>
+            <numerusform>Перамясціць %n элементы у сметніцу?</numerusform>
+            <numerusform>Перамясціць %n элементаў у сметніцу?</numerusform>
+        </translation>
     </message>
 </context>
 <context>
@@ -98,7 +106,11 @@ This cannot be undone.</source>
     </message>
     <message numerus="yes">
         <source>Your choice applies to all %n item(s).</source>
-        <translation><numerusform>Ваш выбар будзе ўжыты да %n элемента.</numerusform><numerusform>Ваш выбар будзе ўжыты да %n элементаў.</numerusform><numerusform>Ваш выбар будзе ўжыты да %n элементаў.</numerusform></translation>
+        <translation>
+            <numerusform>Ваш выбар будзе ўжыты да %n элемента.</numerusform>
+            <numerusform>Ваш выбар будзе ўжыты да %n элементаў.</numerusform>
+            <numerusform>Ваш выбар будзе ўжыты да %n элементаў.</numerusform>
+        </translation>
     </message>
     <message>
         <source>Cancel (Esc)</source>
@@ -133,11 +145,19 @@ This cannot be undone.</source>
     </message>
     <message numerus="yes">
         <source>Move %n item(s) to:</source>
-        <translation><numerusform>Перамясціць %n элемент у:</numerusform><numerusform>Перамясціць %n элементы ў:</numerusform><numerusform>Перамясціць %n элементаў у:</numerusform></translation>
+        <translation>
+            <numerusform>Перамясціць %n элемент у:</numerusform>
+            <numerusform>Перамясціць %n элементы ў:</numerusform>
+            <numerusform>Перамясціць %n элементаў у:</numerusform>
+        </translation>
     </message>
     <message numerus="yes">
         <source>Copy %n item(s) to:</source>
-        <translation><numerusform>Скапіяваць %n элемент у:</numerusform><numerusform>Скапіяваць %n элементы ў:</numerusform><numerusform>Скапіяваць %n элементаў у:</numerusform></translation>
+        <translation>
+            <numerusform>Скапіяваць %n элемент у:</numerusform>
+            <numerusform>Скапіяваць %n элементы ў:</numerusform>
+            <numerusform>Скапіяваць %n элементаў у:</numerusform>
+        </translation>
     </message>
     <message>
         <source>Cancel (Esc)</source>
@@ -225,31 +245,31 @@ This cannot be undone.</source>
         <translation>Крыніца не існуе: %1</translation>
     </message>
     <message>
-        <source>Cannot create folder '%1' (Access denied or invalid path)</source>
+        <source>Cannot create folder &apos;%1&apos; (Access denied or invalid path)</source>
         <translation>Немагчыма стварыць тэчку «%1» (адмоўлена ў доступе або хібны шлях)</translation>
     </message>
     <message>
-        <source>Cannot create destination directory '%1' (Access denied)</source>
+        <source>Cannot create destination directory &apos;%1&apos; (Access denied)</source>
         <translation>Немагчыма стварыць тэчку прызначэння «%1» (адмоўлена ў доступе)</translation>
     </message>
     <message>
-        <source>Cannot copy '%1' to '%2': %3</source>
+        <source>Cannot copy &apos;%1&apos; to &apos;%2&apos;: %3</source>
         <translation>Немагчыма скапіяваць «%1» у «%2»: %3</translation>
     </message>
     <message>
-        <source>Cannot overwrite existing file '%1' (File in use or access denied)</source>
+        <source>Cannot overwrite existing file &apos;%1&apos; (File in use or access denied)</source>
         <translation>Немагчыма перазапісаць файл «%1» (файл выкарыстоўваецца або адмоўлена ў доступе)</translation>
     </message>
     <message>
-        <source>Cannot finish writing '%1' (Access denied)</source>
+        <source>Cannot finish writing &apos;%1&apos; (Access denied)</source>
         <translation>Немагчыма завяршыць запіс «%1» (адмоўлена ў доступе)</translation>
     </message>
     <message>
-        <source>Cannot remove folder '%1' (Not empty or access denied)</source>
+        <source>Cannot remove folder &apos;%1&apos; (Not empty or access denied)</source>
         <translation>Немагчыма выдаліць тэчку «%1» (не пустая або адмоўлена ў доступе)</translation>
     </message>
     <message>
-        <source>Cannot delete '%1' (File in use or access denied)</source>
+        <source>Cannot delete &apos;%1&apos; (File in use or access denied)</source>
         <translation>Немагчыма выдаліць «%1» (файл выкарыстоўваецца або адмоўлена ў доступе)</translation>
     </message>
     <message>
@@ -273,11 +293,11 @@ This cannot be undone.</source>
         <translation>Падрыхтоўка да перамяшчэння…</translation>
     </message>
     <message>
-        <source>Cannot move '%1' into a folder inside itself.</source>
+        <source>Cannot move &apos;%1&apos; into a folder inside itself.</source>
         <translation>Немагчыма перамясціць «%1» у тэчку ўнутры яе самой.</translation>
     </message>
     <message>
-        <source>Cannot copy '%1' into a folder inside itself.</source>
+        <source>Cannot copy &apos;%1&apos; into a folder inside itself.</source>
         <translation>Немагчыма скапіяваць «%1» у тэчку ўнутры яе самой.</translation>
     </message>
     <message>
@@ -293,7 +313,7 @@ This cannot be undone.</source>
         <translation>Выдаленне назаўсёды…</translation>
     </message>
     <message>
-        <source>Cannot move '%1' to the Recycle Bin (in use or access denied)</source>
+        <source>Cannot move &apos;%1&apos; to the Recycle Bin (in use or access denied)</source>
         <translation>Немагчыма перамясціць «%1» у сметніцу (выкарыстоўваецца або адмоўлена ў доступе)</translation>
     </message>
     <message>
@@ -301,7 +321,7 @@ This cannot be undone.</source>
         <translation>Немагчыма выдаліць вылучаныя элементы (няма правоў або яны выкарыстоўваюцца).</translation>
     </message>
     <message>
-        <source>Cannot delete '%1' (Permission denied or in use)</source>
+        <source>Cannot delete &apos;%1&apos; (Permission denied or in use)</source>
         <translation>Немагчыма выдаліць «%1» (няма правоў або файл выкарыстоўваецца)</translation>
     </message>
     <message>
@@ -317,7 +337,7 @@ This cannot be undone.</source>
         <translation>Бацькоўская тэчка не існуе.</translation>
     </message>
     <message>
-        <source>"%1" already exists in this folder.</source>
+        <source>&quot;%1&quot; already exists in this folder.</source>
         <translation>«%1» ужо існуе ў гэтай тэчцы.</translation>
     </message>
     <message>
@@ -325,7 +345,7 @@ This cannot be undone.</source>
         <translation>Створана тэчка: %1</translation>
     </message>
     <message>
-        <source>Could not create "%1" here (permission denied or the name is not allowed).</source>
+        <source>Could not create &quot;%1&quot; here (permission denied or the name is not allowed).</source>
         <translation>Немагчыма стварыць «%1» тут (няма правоў або назва не дазволена).</translation>
     </message>
     <message>
@@ -373,23 +393,43 @@ This cannot be undone.</source>
     </message>
     <message numerus="yes">
         <source>%n found so far</source>
-        <translation><numerusform>пакуль знойдзены %n</numerusform><numerusform>пакуль знойдзена %n</numerusform><numerusform>пакуль знойдзена %n</numerusform></translation>
+        <translation>
+            <numerusform>пакуль знойдзены %n</numerusform>
+            <numerusform>пакуль знойдзена %n</numerusform>
+            <numerusform>пакуль знойдзена %n</numerusform>
+        </translation>
     </message>
     <message numerus="yes">
         <source>%n found (limit reached)</source>
-        <translation><numerusform>знойдзены %n (дасягнуты ліміт)</numerusform><numerusform>знойдзена %n (дасягнуты ліміт)</numerusform><numerusform>знойдзена %n (дасягнуты ліміт)</numerusform></translation>
+        <translation>
+            <numerusform>знойдзены %n (дасягнуты ліміт)</numerusform>
+            <numerusform>знойдзена %n (дасягнуты ліміт)</numerusform>
+            <numerusform>знойдзена %n (дасягнуты ліміт)</numerusform>
+        </translation>
     </message>
     <message numerus="yes">
         <source>%n found</source>
-        <translation><numerusform>знойдзены %n</numerusform><numerusform>знойдзена %n</numerusform><numerusform>знойдзена %n</numerusform></translation>
+        <translation>
+            <numerusform>знойдзены %n</numerusform>
+            <numerusform>знойдзена %n</numerusform>
+            <numerusform>знойдзена %n</numerusform>
+        </translation>
     </message>
     <message numerus="yes">
         <source>%n item(s) so far</source>
-        <translation><numerusform>пакуль %n элемент</numerusform><numerusform>пакуль %n элементы</numerusform><numerusform>пакуль %n элементаў</numerusform></translation>
+        <translation>
+            <numerusform>пакуль %n элемент</numerusform>
+            <numerusform>пакуль %n элементы</numerusform>
+            <numerusform>пакуль %n элементаў</numerusform>
+        </translation>
     </message>
     <message numerus="yes">
         <source>%n item(s)</source>
-        <translation><numerusform>%n элемент</numerusform><numerusform>%n элементы</numerusform><numerusform>%n элементаў</numerusform></translation>
+        <translation>
+            <numerusform>%n элемент</numerusform>
+            <numerusform>%n элементы</numerusform>
+            <numerusform>%n элементаў</numerusform>
+        </translation>
     </message>
     <message>
         <source>%1 selected (%2)</source>
@@ -525,12 +565,12 @@ This cannot be undone.</source>
         <translation>Памяняць панэлі месцамі (Ctrl+U)</translation>
     </message>
     <message>
-        <source>Open Terminal in active folder</source>
-        <translation>Адкрыць тэрмінал у актыўнай тэчцы</translation>
-    </message>
-    <message>
         <source>Refresh All (Ctrl+R)</source>
         <translation>Абнавіць усё (Ctrl+R)</translation>
+    </message>
+    <message>
+        <source>Open Terminal in active folder (Ctrl+Shift+T)</source>
+        <translation>Адкрыць тэрмінал у актыўнай тэчцы (Ctrl+Shift+T)</translation>
     </message>
 </context>
 <context>
@@ -664,12 +704,19 @@ This cannot be undone.</source>
 <context>
     <name>PanelController</name>
     <message>
-        <source>'%1' is a file, not a folder.</source>
+        <source>&apos;%1&apos; is a file, not a folder.</source>
         <translation>«%1» — гэта файл, а не тэчка.</translation>
     </message>
     <message>
-        <source>Cannot open '%1'. The folder does not exist, or is not reachable (a removable drive may have been unplugged).</source>
+        <source>Cannot open &apos;%1&apos;. The folder does not exist, or is not reachable (a removable drive may have been unplugged).</source>
         <translation>Немагчыма адкрыць «%1». Тэчка не існуе або недаступная (здымны дыск мог быць адключаны).</translation>
+    </message>
+</context>
+<context>
+    <name>PanelTabs</name>
+    <message>
+        <source>Close tab (Ctrl+W)</source>
+        <translation>Закрыць укладку (Ctrl+W)</translation>
     </message>
 </context>
 <context>

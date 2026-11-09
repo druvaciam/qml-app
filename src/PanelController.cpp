@@ -18,6 +18,7 @@ PanelController::PanelController(QObject *parent)
             m_lastPathOnDrive.insert(driveRootOf(path), path);
         }
         emit currentPathChanged(path);
+        emit tabsChanged();
         updateCurrentDriveInfo();
         emit statusChanged();
     });
@@ -199,17 +200,141 @@ void PanelController::changeDrive(const QString &rootPath)
     // nearest folder above it that still exists. The drive already open: its
     // root, so its button is also the quick way to the top.
     QString target = rootPath;
-    const QString last = m_lastPathOnDrive.value(rootPath);
-    if (!last.isEmpty() && driveRootOf(currentPath()) != rootPath) {
-        QString candidate = last;
-        while (!QDir(candidate).exists() && candidate.size() > rootPath.size()) {
-            candidate = QFileInfo(candidate).path();
-        }
-        if (QDir(candidate).exists()) {
-            target = candidate;
+    if (driveRootOf(currentPath()) != rootPath) {
+        const QString existing = existingFolderAtOrAbove(m_lastPathOnDrive.value(rootPath));
+        if (!existing.isEmpty()) {
+            target = existing;
         }
     }
     navigateTo(target);
+}
+
+QString PanelController::existingFolderAtOrAbove(const QString &path)
+{
+    if (path.isEmpty()) {
+        return QString();
+    }
+    QString candidate = path;
+    while (!QDir(candidate).exists()) {
+        const QString parent = QFileInfo(candidate).path();
+        if (parent == candidate) {
+            return QString();
+        }
+        candidate = parent;
+    }
+    return candidate;
+}
+
+QStringList PanelController::tabPaths() const
+{
+    QStringList paths;
+    for (const Tab &tab : m_tabs) {
+        paths.append(tab.path);
+    }
+    paths[m_currentTab] = currentPath();
+    return paths;
+}
+
+void PanelController::storeCurrentTab()
+{
+    Tab &tab = m_tabs[m_currentTab];
+    tab.path = currentPath();
+    tab.history = m_history;
+    tab.historyIndex = m_historyIndex;
+    tab.cursorName = QFileInfo(currentItemPath()).fileName();
+}
+
+/// Makes the tab at index the open one and shows its folder. The tab that
+/// was open must already be stored or removed.
+void PanelController::openTab(int index)
+{
+    m_currentTab = index;
+    const Tab tab = m_tabs.at(index);
+    m_history = tab.history;
+    m_historyIndex = tab.historyIndex;
+
+    QString target = existingFolderAtOrAbove(tab.path);
+    if (target.isEmpty()) {
+        target = QDir::homePath();
+    }
+    if (m_history.value(m_historyIndex) != target) {
+        pushHistory(target);
+    }
+    emit historyChanged();
+    emit tabsChanged();
+
+    if (FileOperationsService::isSamePath(currentPath(), target)) {
+        selectItemByName(tab.cursorName);
+        return;
+    }
+    clearFilterOnNavigate();
+    m_pendingSelectName = tab.cursorName;
+    m_model->setCurrentPath(target);
+}
+
+void PanelController::newTab()
+{
+    storeCurrentTab();
+    Tab tab;
+    tab.path = currentPath();
+    tab.history = {tab.path};
+    tab.historyIndex = 0;
+    tab.cursorName = m_tabs.at(m_currentTab).cursorName;
+    m_tabs.insert(m_currentTab + 1, tab);
+    openTab(m_currentTab + 1);
+}
+
+void PanelController::closeTab(int index)
+{
+    if (m_tabs.size() < 2 || index < 0 || index >= m_tabs.size()) {
+        return;
+    }
+    if (index != m_currentTab) {
+        m_tabs.removeAt(index);
+        if (index < m_currentTab) {
+            --m_currentTab;
+        }
+        emit tabsChanged();
+        return;
+    }
+    m_tabs.removeAt(index);
+    openTab(qMin(index, int(m_tabs.size()) - 1));
+}
+
+void PanelController::switchTab(int index)
+{
+    if (index == m_currentTab || index < 0 || index >= m_tabs.size()) {
+        return;
+    }
+    storeCurrentTab();
+    openTab(index);
+}
+
+void PanelController::stepTab(int step)
+{
+    const int count = int(m_tabs.size());
+    if (count < 2) {
+        return;
+    }
+    switchTab(((m_currentTab + step) % count + count) % count);
+}
+
+void PanelController::restoreTabs(const QStringList &paths, int current)
+{
+    QList<Tab> tabs;
+    for (const QString &path : paths) {
+        if (!path.isEmpty()) {
+            Tab tab;
+            tab.path = path;
+            tabs.append(tab);
+        }
+    }
+    if (tabs.isEmpty()) {
+        return;
+    }
+    m_tabs = tabs;
+    m_currentTab = qBound(0, current, int(m_tabs.size()) - 1);
+    emit tabsChanged();
 }
 
 /// The root of the drive a path is on: the longest known drive root the path

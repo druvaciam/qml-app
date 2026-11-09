@@ -1005,6 +1005,30 @@ ApplicationWindow {
     Shortcut {
         sequence: "Ctrl+T"
         enabled: !anyModalOpen()
+        onActivated: appCtrl.activePanel.newTab()
+    }
+
+    Shortcut {
+        sequence: "Ctrl+W"
+        enabled: !anyModalOpen()
+        onActivated: appCtrl.activePanel.closeTab(appCtrl.activePanel.currentTab)
+    }
+
+    Shortcut {
+        sequence: "Ctrl+Tab"
+        enabled: !anyModalOpen()
+        onActivated: appCtrl.activePanel.stepTab(1)
+    }
+
+    Shortcut {
+        sequence: "Ctrl+Shift+Tab"
+        enabled: !anyModalOpen()
+        onActivated: appCtrl.activePanel.stepTab(-1)
+    }
+
+    Shortcut {
+        sequence: "Ctrl+Shift+T"
+        enabled: !anyModalOpen()
         onActivated: appCtrl.openTerminalInActivePanel()
     }
 

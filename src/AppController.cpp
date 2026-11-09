@@ -99,6 +99,8 @@ AppController::AppController(QObject *parent)
 
     connect(m_leftPanel, &PanelController::currentPathChanged, this, &AppController::saveSession);
     connect(m_rightPanel, &PanelController::currentPathChanged, this, &AppController::saveSession);
+    connect(m_leftPanel, &PanelController::tabsChanged, this, &AppController::saveSession);
+    connect(m_rightPanel, &PanelController::tabsChanged, this, &AppController::saveSession);
 
     connect(m_leftPanel, &PanelController::isActiveChanged, this, [this](bool active) {
         if (active && m_activePanelIndex != 0) {
@@ -201,6 +203,10 @@ void AppController::loadSession()
                                                FileListModel::SortByName).toInt();
     const bool leftSortAscending = settings.value(QStringLiteral("session/leftSortAscending"), true).toBool();
     const bool rightSortAscending = settings.value(QStringLiteral("session/rightSortAscending"), true).toBool();
+    const QStringList leftTabs = settings.value(QStringLiteral("session/leftTabs")).toStringList();
+    const QStringList rightTabs = settings.value(QStringLiteral("session/rightTabs")).toStringList();
+    const int leftCurrentTab = settings.value(QStringLiteral("session/leftCurrentTab"), 0).toInt();
+    const int rightCurrentTab = settings.value(QStringLiteral("session/rightCurrentTab"), 0).toInt();
     // A value from a damaged or older settings file falls back to name order.
     auto validColumn = [](int column) {
         return column >= FileListModel::SortByName && column <= FileListModel::SortByDate
@@ -227,9 +233,11 @@ void AppController::loadSession()
     // goes back there too.
     if (m_leftPanel) {
         m_leftPanel->setDrivePaths(settings.value(QStringLiteral("session/leftDrivePaths")).toMap());
+        m_leftPanel->restoreTabs(leftTabs, leftCurrentTab);
     }
     if (m_rightPanel) {
         m_rightPanel->setDrivePaths(settings.value(QStringLiteral("session/rightDrivePaths")).toMap());
+        m_rightPanel->restoreTabs(rightTabs, rightCurrentTab);
     }
 
     QString homePath = QDir::homePath();
@@ -262,10 +270,14 @@ void AppController::saveSession()
     if (m_leftPanel && !m_leftPanel->currentPath().isEmpty()) {
         settings.setValue(QStringLiteral("session/leftPanelPath"), m_leftPanel->currentPath());
         settings.setValue(QStringLiteral("session/leftDrivePaths"), m_leftPanel->drivePaths());
+        settings.setValue(QStringLiteral("session/leftTabs"), m_leftPanel->tabPaths());
+        settings.setValue(QStringLiteral("session/leftCurrentTab"), m_leftPanel->currentTab());
     }
     if (m_rightPanel && !m_rightPanel->currentPath().isEmpty()) {
         settings.setValue(QStringLiteral("session/rightPanelPath"), m_rightPanel->currentPath());
         settings.setValue(QStringLiteral("session/rightDrivePaths"), m_rightPanel->drivePaths());
+        settings.setValue(QStringLiteral("session/rightTabs"), m_rightPanel->tabPaths());
+        settings.setValue(QStringLiteral("session/rightCurrentTab"), m_rightPanel->currentTab());
     }
     settings.setValue(QStringLiteral("session/activePanelIndex"), m_activePanelIndex);
 
